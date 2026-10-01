@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if resource belongs to requesting user
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profile document rules
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Topics document rules
+    match /topics/{topicId} {
+      allow read, create, update, delete: if isAuthenticated() && 
+        (resource == null || resource.data.userId == request.auth.uid) &&
+        (request.resource == null || request.resource.data.userId == request.auth.uid);
+    }
+
+    // Content document rules
+    match /content/{contentId} {
+      allow read, create, update, delete: if isAuthenticated() && 
+        (resource == null || resource.data.userId == request.auth.uid) &&
+        (request.resource == null || request.resource.data.userId == request.auth.uid);
+    }
+
+    // Scheduled posts collection rules
+    match /scheduled_posts/{postId} {
+      allow read, create, update, delete: if isAuthenticated() && 
+        (resource == null || resource.data.userId == request.auth.uid) &&
+        (request.resource == null || request.resource.data.userId == request.auth.uid);
+    }
+
+    // Published posts collection rules
+    match /published_posts/{postId} {
+      allow read, create, update, delete: if isAuthenticated() && 
+        (resource == null || resource.data.userId == request.auth.uid) &&
+        (request.resource == null || request.resource.data.userId == request.auth.uid);
+    }
+
+    // User Settings rules
+    match /settings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // LinkedIn Connection rules (stored securely per user)
+    match /linkedin_connections/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
