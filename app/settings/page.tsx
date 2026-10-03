@@ -66,8 +66,28 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLinkedInConnect = () => {
-    window.location.href = '/api/auth/linkedin';
+  const handleLinkedInConnect = async () => {
+    if (!user) return;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/auth/linkedin', {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Failed to initiate LinkedIn connection');
+        return;
+      }
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error('Failed to initiate LinkedIn OAuth:', err);
+      alert('Failed to connect to LinkedIn');
+    }
   };
 
   return (

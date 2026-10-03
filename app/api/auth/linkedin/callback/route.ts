@@ -1,15 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveLinkedInConnection } from '@/services/firestoreService';
+import crypto from 'crypto';
+import { adminDb } from '@/lib/firebaseAdmin';
 import { LinkedInConnection } from '@/types';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
+  const stateQuery = searchParams.get('state');
   const error = searchParams.get('error');
 
+  // Read cookies for OAuth state and verified user identity
+  const storedState = req.cookies.get('oauth_state')?.value;
+  const storedUid = req.cookies.get('oauth_uid')?.value;
+
+  // 1. Check for LinkedIn OAuth error or missing code
   if (error || !code) {
-    console.warn('LinkedIn OAuth authorization declined or missing code:', error);
-    return NextResponse.redirect(new URL('/settings?error=linkedin_auth_failed', req.url));
+    console.warn('LinkedIn OAuth declined or missing code:', error);
+    const res = NextResponse.redirect(new URL('/settings?error=linkedin_auth_failed', req.url));
+    res.cookies.delete('oauth_state');
+    res.cookies.delete('oauth_uid');
+    return res;
+  }
+
+  // 2. Validate state cookie exists and matches query parameter (CSRF protection)
+  if (!storedState || !stateQuery) {
+    console.error('LinkedIn OAuth CSRF error: missing state cookie or query parameter');
+    return NextResponse.json(
+      { error: 'Unauthorized: Missing OAuth state token' },
+      { status: 401 }
+    );
+  }
+
+  // Timing-safe comparison to prevent timing attacks
+  const stateBufferA = Buffer.from(stateQuery);
+  const stateBufferB = Buffer.from(storedState);
+  const statesMatch =
+    stateBufferA.length === stateBufferB.length &&
+    crypto.timingSafeEqual(stateBufferA, stateBufferB);
+
+  if (!statesMatch) {
+    console.error('LinkedIn OAuth CSRF error: state mismatch');
+    return NextResponse.json(
+      { error: 'Unauthorized: Invalid OAuth state token' },
+      { status: 401 }
+    );
+  }
+
+  // 3. Validate user identity from stored cookie (never trust query param)
+  if (!storedUid) {
+    console.error('LinkedIn OAuth error: missing authenticated user session cookie');
+    return NextResponse.json(
+      { error: 'Unauthorized: Missing authenticated user session' },
+      { status: 401 }
+    );
   }
 
   const clientId = process.env.LINKEDIN_CLIENT_ID || '';
@@ -18,7 +61,7 @@ export async function GET(req: NextRequest) {
     process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/api/auth/linkedin/callback';
 
   try {
-    // Server-side code exchange for access token
+    // 4. Exchange authorization code for LinkedIn tokens
     const tokenRes = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',
       headers: {
@@ -35,14 +78,14 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
-      console.warn('LinkedIn Token Exchange Response (Proceeding with connected state):', errText);
+      console.warn('LinkedIn Token Exchange Response:', errText);
     }
 
     const tokenData = tokenRes.ok ? await tokenRes.json() : null;
     const accessToken = tokenData?.access_token || `token_${Date.now()}_mock`;
     const expiresIn = tokenData?.expires_in || 5184000; // 60 days default
 
-    // Fetch user profile info
+    // 5. Fetch LinkedIn user profile info
     let memberId = 'urn:li:person:demo_member_id';
     let memberName = 'LinkedIn Member';
 
@@ -63,11 +106,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Default target demo user ID if not authenticated session
-    const userId = 'user_autopilot_demo';
-
     const connection: LinkedInConnection = {
-      userId,
+      userId: storedUid,
       memberId,
       memberName,
       accessToken,
@@ -75,11 +115,22 @@ export async function GET(req: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    await saveLinkedInConnection(connection);
+    // 6. Use Firebase Admin SDK on the server-side callback to persist linkedin_connections
+    await adminDb.collection('linkedin_connections').doc(storedUid).set(connection);
 
-    return NextResponse.redirect(new URL('/settings?connected=true', req.url));
+    // 7. Return redirect response and clear OAuth cookies
+    const response = NextResponse.redirect(new URL('/settings?connected=true', req.url));
+    response.cookies.delete('oauth_state');
+    response.cookies.delete('oauth_uid');
+
+    return response;
   } catch (err: any) {
     console.error('LinkedIn OAuth processing error:', err);
-    return NextResponse.redirect(new URL('/settings?error=linkedin_server_error', req.url));
+    const response = NextResponse.redirect(
+      new URL('/settings?error=linkedin_server_error', req.url)
+    );
+    response.cookies.delete('oauth_state');
+    response.cookies.delete('oauth_uid');
+    return response;
   }
 }
