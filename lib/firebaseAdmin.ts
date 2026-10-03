@@ -27,7 +27,12 @@ function getAdminApp(): App {
         parsedKey = Buffer.from(parsedKey, 'base64').toString('utf8').trim();
       }
 
-      let serviceAccount = JSON.parse(parsedKey);
+      let serviceAccount;
+      try {
+        serviceAccount = JSON.parse(parsedKey);
+      } catch {
+        serviceAccount = JSON.parse(parsedKey.replace(/\\"/g, '"'));
+      }
       if (typeof serviceAccount === 'string') {
         serviceAccount = JSON.parse(serviceAccount);
       }
