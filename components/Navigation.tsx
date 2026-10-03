@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Tag, FileText, Calendar, Settings, Linkedin, LogOut, Sparkles } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -16,11 +16,28 @@ export const NAV_ITEMS = [
 
 export function Navigation({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const router = useRouter();
+  const { user, loading, logout } = useAuth();
+
+  // Redirect unauthenticated users to /login after auth state is resolved
+  useEffect(() => {
+    if (!loading && !user && pathname !== '/login') {
+      router.replace('/login');
+    }
+  }, [loading, user, pathname, router]);
 
   // Hide nav on login page
   if (pathname === '/login') {
     return <>{children}</>;
+  }
+
+  // Show blank screen while Firebase auth state resolves (prevents flash of protected content)
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
