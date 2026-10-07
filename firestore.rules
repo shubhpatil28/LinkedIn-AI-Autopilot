@@ -7,7 +7,7 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper function to check if resource belongs to requesting user
+    // Helper function to check if user owns resource or matches ID
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -17,32 +17,36 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // Topics document rules
+    // Topics collection rules
     match /topics/{topicId} {
-      allow read, create, update, delete: if isAuthenticated() && 
-        (resource == null || resource.data.userId == request.auth.uid) &&
-        (request.resource == null || request.resource.data.userId == request.auth.uid);
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId);
     }
 
-    // Content document rules
+    // Content collection rules
     match /content/{contentId} {
-      allow read, create, update, delete: if isAuthenticated() && 
-        (resource == null || resource.data.userId == request.auth.uid) &&
-        (request.resource == null || request.resource.data.userId == request.auth.uid);
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId);
     }
 
     // Scheduled posts collection rules
     match /scheduled_posts/{postId} {
-      allow read, create, update, delete: if isAuthenticated() && 
-        (resource == null || resource.data.userId == request.auth.uid) &&
-        (request.resource == null || request.resource.data.userId == request.auth.uid);
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId);
     }
 
     // Published posts collection rules
     match /published_posts/{postId} {
-      allow read, create, update, delete: if isAuthenticated() && 
-        (resource == null || resource.data.userId == request.auth.uid) &&
-        (request.resource == null || request.resource.data.userId == request.auth.uid);
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId);
     }
 
     // User Settings rules
@@ -50,9 +54,10 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // LinkedIn Connection rules (stored securely per user)
+    // LinkedIn Connection rules
     match /linkedin_connections/{userId} {
       allow read, write: if isOwner(userId);
     }
   }
 }
+

@@ -8,11 +8,9 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
-  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Topic, ContentItem, UserSettings, LinkedInConnection, ContentStatus } from '@/types';
+import { Topic, ContentItem, UserSettings, LinkedInConnection } from '@/types';
 
 // Default initial topics if user has none
 export const DEFAULT_TOPICS = ['AI', 'Coding', 'JavaScript', 'React', 'Web Development'];
@@ -28,15 +26,7 @@ export const DEFAULT_SETTINGS: Omit<UserSettings, 'userId' | 'updatedAt'> = {
   publishingMode: 'Human Approval',
 };
 
-// In-memory fallback cache for smooth offline/demo support
-const mockStorage = {
-  topics: new Map<string, Topic>(),
-  content: new Map<string, ContentItem>(),
-  settings: new Map<string, UserSettings>(),
-  connections: new Map<string, LinkedInConnection>(),
-};
-
-// TOPICS CRUD
+// TOPICS CRUD - Firestore is the single source of truth
 export async function getUserTopics(userId: string): Promise<Topic[]> {
   try {
     const topicsRef = collection(db, 'topics');
@@ -44,7 +34,7 @@ export async function getUserTopics(userId: string): Promise<Topic[]> {
     const querySnapshot = await getDocs(q);
     
     if (querySnapshot.empty) {
-      // Initialize default topics if empty
+      // Initialize default topics in Firestore if empty
       const createdTopics: Topic[] = [];
       for (const name of DEFAULT_TOPICS) {
         const id = `topic_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -68,59 +58,42 @@ export async function getUserTopics(userId: string): Promise<Topic[]> {
     });
     return topics.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   } catch (error) {
-    console.warn('Firestore fetch failed, using fallback storage:', error);
-    const userTopics = Array.from(mockStorage.topics.values()).filter((t) => t.userId === userId);
-    if (userTopics.length === 0) {
-      DEFAULT_TOPICS.forEach((name, i) => {
-        const t: Topic = {
-          id: `topic_${i}`,
-          userId,
-          name,
-          enabled: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        mockStorage.topics.set(t.id, t);
-      });
-    }
-    return Array.from(mockStorage.topics.values()).filter((t) => t.userId === userId);
+    console.error('Firestore getUserTopics failed:', error);
+    throw error;
   }
 }
 
 export async function createTopic(topic: Topic): Promise<void> {
   try {
-    mockStorage.topics.set(topic.id, topic);
     const docRef = doc(db, 'topics', topic.id);
     await setDoc(docRef, topic);
   } catch (error) {
-    console.warn('Firestore set failed, stored in local cache:', error);
+    console.error('Firestore createTopic failed for topic:', topic.id, error);
+    throw error;
   }
 }
 
 export async function updateTopic(id: string, updates: Partial<Topic>): Promise<void> {
   try {
-    const existing = mockStorage.topics.get(id);
-    if (existing) {
-      mockStorage.topics.set(id, { ...existing, ...updates, updatedAt: new Date().toISOString() });
-    }
     const docRef = doc(db, 'topics', id);
     await updateDoc(docRef, { ...updates, updatedAt: new Date().toISOString() });
   } catch (error) {
-    console.warn('Firestore update failed:', error);
+    console.error('Firestore updateTopic failed for topic:', id, error);
+    throw error;
   }
 }
 
 export async function deleteTopic(id: string): Promise<void> {
   try {
-    mockStorage.topics.delete(id);
     const docRef = doc(db, 'topics', id);
     await deleteDoc(docRef);
   } catch (error) {
-    console.warn('Firestore delete failed:', error);
+    console.error('Firestore deleteTopic failed for topic:', id, error);
+    throw error;
   }
 }
 
-// CONTENT CRUD
+// CONTENT CRUD - Firestore is the single source of truth
 export async function getUserContent(userId: string): Promise<ContentItem[]> {
   try {
     const contentRef = collection(db, 'content');
@@ -130,47 +103,40 @@ export async function getUserContent(userId: string): Promise<ContentItem[]> {
     querySnapshot.forEach((docSnap) => {
       items.push(docSnap.data() as ContentItem);
     });
-    const result = [...items, ...Array.from(mockStorage.content.values()).filter(c => c.userId === userId)];
-    // deduplicate by id
-    const uniqueMap = new Map<string, ContentItem>();
-    result.forEach(item => uniqueMap.set(item.id, item));
-    return Array.from(uniqueMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (error) {
-    console.warn('Firestore getUserContent failed, returning cached:', error);
-    return Array.from(mockStorage.content.values()).filter((c) => c.userId === userId);
+    console.error('Firestore getUserContent failed:', error);
+    throw error;
   }
 }
 
 export async function saveContentItem(content: ContentItem): Promise<void> {
   try {
-    mockStorage.content.set(content.id, content);
     const docRef = doc(db, 'content', content.id);
     await setDoc(docRef, content);
   } catch (error) {
-    console.warn('Firestore saveContentItem failed, saved in cache:', error);
+    console.error('Firestore saveContentItem failed for content:', content.id, error);
+    throw error;
   }
 }
 
 export async function updateContentItem(id: string, updates: Partial<ContentItem>): Promise<void> {
   try {
-    const existing = mockStorage.content.get(id);
-    if (existing) {
-      mockStorage.content.set(id, { ...existing, ...updates, updatedAt: new Date().toISOString() });
-    }
     const docRef = doc(db, 'content', id);
     await updateDoc(docRef, { ...updates, updatedAt: new Date().toISOString() });
   } catch (error) {
-    console.warn('Firestore updateContentItem failed:', error);
+    console.error('Firestore updateContentItem failed for content:', id, error);
+    throw error;
   }
 }
 
 export async function deleteContentItem(id: string): Promise<void> {
   try {
-    mockStorage.content.delete(id);
     const docRef = doc(db, 'content', id);
     await deleteDoc(docRef);
   } catch (error) {
-    console.warn('Firestore deleteContentItem failed:', error);
+    console.error('Firestore deleteContentItem failed for content:', id, error);
+    throw error;
   }
 }
 
@@ -190,27 +156,23 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
     await saveUserSettings(initialSettings);
     return initialSettings;
   } catch (error) {
-    console.warn('Firestore getUserSettings failed, returning defaults:', error);
-    if (mockStorage.settings.has(userId)) {
-      return mockStorage.settings.get(userId)!;
-    }
+    console.error('Firestore getUserSettings failed:', error);
     const initialSettings: UserSettings = {
       ...DEFAULT_SETTINGS,
       userId,
       updatedAt: new Date().toISOString(),
     };
-    mockStorage.settings.set(userId, initialSettings);
     return initialSettings;
   }
 }
 
 export async function saveUserSettings(settings: UserSettings): Promise<void> {
   try {
-    mockStorage.settings.set(settings.userId, settings);
     const docRef = doc(db, 'settings', settings.userId);
     await setDoc(docRef, settings);
   } catch (error) {
-    console.warn('Firestore saveUserSettings failed:', error);
+    console.error('Firestore saveUserSettings failed:', error);
+    throw error;
   }
 }
 
@@ -222,9 +184,10 @@ export async function getLinkedInConnection(userId: string): Promise<LinkedInCon
     if (docSnap.exists()) {
       return docSnap.data() as LinkedInConnection;
     }
-    return mockStorage.connections.get(userId) || null;
+    return null;
   } catch (error) {
-    return mockStorage.connections.get(userId) || null;
+    console.error('Firestore getLinkedInConnection failed:', error);
+    return null;
   }
 }
 
@@ -236,13 +199,12 @@ export async function getLinkedInConnectionClientSafe(userId: string): Promise<O
   return safeConn;
 }
 
-
 export async function saveLinkedInConnection(connection: LinkedInConnection): Promise<void> {
   try {
-    mockStorage.connections.set(connection.userId, connection);
     const docRef = doc(db, 'linkedin_connections', connection.userId);
     await setDoc(docRef, connection);
   } catch (error) {
-    console.warn('Firestore saveLinkedInConnection failed:', error);
+    console.error('Firestore saveLinkedInConnection failed:', error);
+    throw error;
   }
 }
