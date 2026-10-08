@@ -18,68 +18,106 @@ export async function publishToLinkedIn(
     };
   }
 
+  // FIX #2: Strict connection validation — no fallbacks, no fake IDs
+
+  if (!connection) {
+    return {
+      success: false,
+      errorReason: 'LinkedIn is not connected. Connect LinkedIn in Settings before publishing.',
+    };
+  }
+
+  if (!connection.accessToken) {
+    return {
+      success: false,
+      errorReason: 'LinkedIn OAuth access token is missing. Reconnect LinkedIn in Settings.',
+    };
+  }
+
+  if (connection.accessToken.includes('mock') || connection.accessToken.includes('demo')) {
+    return {
+      success: false,
+      errorReason: 'LinkedIn OAuth access token is a mock/demo token. Reconnect LinkedIn with a real account.',
+    };
+  }
+
+  if (
+    !connection.memberId ||
+    connection.memberId.includes('demo') ||
+    connection.memberId === ''
+  ) {
+    return {
+      success: false,
+      errorReason: 'LinkedIn member ID is missing or invalid. Reconnect LinkedIn in Settings.',
+    };
+  }
+
   // Construct full post text according to required structure: Hook + Body + CTA + Hashtags
   const fullPostText = `${content.hook}\n\n${content.body}\n\n${content.cta}\n\n${content.hashtags.join(' ')}`;
 
-  if (connection && connection.accessToken && !connection.accessToken.includes('mock')) {
-    try {
-      // Official LinkedIn REST Posts API endpoint (POST https://api.linkedin.com/rest/posts)
-      const authorUrn = connection.memberId || 'urn:li:person:demo_author';
+  try {
+    // Official LinkedIn REST Posts API endpoint (POST https://api.linkedin.com/rest/posts)
+    const postPayload = {
+      author: connection.memberId,
+      commentary: fullPostText,
+      visibility: 'PUBLIC',
+      distribution: {
+        feedDistribution: 'MAIN_FEED',
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
+      lifecycleState: 'PUBLISHED',
+      isReshareDisabledByAuthor: false,
+    };
 
-      const postPayload = {
-        author: authorUrn,
-        commentary: fullPostText,
-        visibility: 'PUBLIC',
-        distribution: {
-          feedDistribution: 'MAIN_FEED',
-          targetEntities: [],
-          thirdPartyDistributionChannels: [],
-        },
-        lifecycleState: 'PUBLISHED',
-        isReshareDisabledByAuthor: false,
-      };
+    const response = await fetch('https://api.linkedin.com/rest/posts', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${connection.accessToken}`,
+        'Content-Type': 'application/json',
+        'LinkedIn-Version': '202609',
+        'X-Restli-Protocol-Version': '2.0.0',
+      },
+      body: JSON.stringify(postPayload),
+    });
 
-      const response = await fetch('https://api.linkedin.com/rest/posts', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${connection.accessToken}`,
-          'Content-Type': 'application/json',
-          'LinkedIn-Version': '202609',
-          'X-Restli-Protocol-Version': '2.0.0',
-        },
-        body: JSON.stringify(postPayload),
-      });
-
-
-      if (response.ok || response.status === 201) {
-        const headerPostId = response.headers.get('x-restli-id') || response.headers.get('x-linkedin-id');
-        const resBody = response.headers.get('content-type')?.includes('json') ? await response.json() : null;
-        const linkedinPostId = headerPostId || resBody?.id || `urn:li:share:${Date.now()}`;
-
-        return {
-          success: true,
-          linkedinPostId,
-        };
-      } else {
-        const errorText = await response.text();
-        return {
-          success: false,
-          errorReason: `LinkedIn REST API error (${response.status}): ${errorText.substring(0, 200)}`,
-        };
+    if (response.ok || response.status === 201) {
+      const headerPostId = response.headers.get('x-restli-id') || response.headers.get('x-linkedin-id');
+      let bodyPostId: string | null = null;
+      try {
+        if (response.headers.get('content-type')?.includes('json')) {
+          const resBody = await response.json();
+          bodyPostId = resBody?.id || null;
+        }
+      } catch {
+        // Response body may be empty on 201, which is normal
       }
-    } catch (err: any) {
+
+      const linkedinPostId = headerPostId || bodyPostId;
+
+      if (!linkedinPostId) {
+        // LinkedIn 201 with no post ID — still a success but log a warning
+        console.warn('[LinkedIn API] Success response but no post ID found in headers or body');
+      }
+
+      return {
+        success: true,
+        linkedinPostId: linkedinPostId || undefined,
+      };
+    } else {
+      const errorText = await response.text();
+      console.error(`[LinkedIn API] Error response: status=${response.status} body=${errorText.substring(0, 500)}`);
       return {
         success: false,
-        errorReason: err.message || 'Network failure communicating with official LinkedIn REST API',
+        errorReason: `LinkedIn REST API error (${response.status}): ${errorText.substring(0, 200)}`,
       };
     }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown network error';
+    console.error('[LinkedIn API] Network/fetch error:', message);
+    return {
+      success: false,
+      errorReason: `Network failure communicating with LinkedIn REST API: ${message}`,
+    };
   }
-
-  // Fallback production simulation when live OAuth token is not configured or in sandbox testing
-  const simulatedPostId = `urn:li:share:${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-  return {
-    success: true,
-    linkedinPostId: simulatedPostId,
-  };
 }

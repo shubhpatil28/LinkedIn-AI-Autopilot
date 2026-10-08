@@ -55,10 +55,22 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const clientId = process.env.LINKEDIN_CLIENT_ID || '';
-  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || '';
-  const redirectUri =
-    process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3000/api/auth/linkedin/callback';
+  // FIX #4: Fail clearly if production environment variables are missing
+  const clientId = process.env.LINKEDIN_CLIENT_ID;
+  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
+  const redirectUri = process.env.LINKEDIN_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    console.error('LinkedIn OAuth environment variables missing:', {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      hasRedirectUri: !!redirectUri,
+    });
+    const res = NextResponse.redirect(new URL('/settings?error=linkedin_server_config', req.url));
+    res.cookies.delete('oauth_state');
+    res.cookies.delete('oauth_uid');
+    return res;
+  }
 
   try {
     // 4. Exchange authorization code for LinkedIn tokens
@@ -78,32 +90,56 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
-      console.warn('LinkedIn Token Exchange Response:', errText);
+      console.error('LinkedIn Token Exchange failed:', { status: tokenRes.status, body: errText.substring(0, 300) });
+      const res = NextResponse.redirect(new URL('/settings?error=linkedin_token_exchange_failed', req.url));
+      res.cookies.delete('oauth_state');
+      res.cookies.delete('oauth_uid');
+      return res;
     }
 
-    const tokenData = tokenRes.ok ? await tokenRes.json() : null;
-    const accessToken = tokenData?.access_token || `token_${Date.now()}_mock`;
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData?.access_token;
     const expiresIn = tokenData?.expires_in || 5184000; // 60 days default
 
-    // 5. Fetch LinkedIn user profile info
-    let memberId = 'urn:li:person:demo_member_id';
-    let memberName = 'LinkedIn Member';
+    // FIX #4: Fail if no real access token received
+    if (!accessToken) {
+      console.error('LinkedIn token exchange succeeded but no access_token in response');
+      const res = NextResponse.redirect(new URL('/settings?error=linkedin_token_missing', req.url));
+      res.cookies.delete('oauth_state');
+      res.cookies.delete('oauth_uid');
+      return res;
+    }
 
-    if (tokenData?.access_token) {
-      try {
-        const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
-          headers: {
-            Authorization: `Bearer ${tokenData.access_token}`,
-          },
-        });
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
+    // 5. Fetch LinkedIn user profile info — fail if profile cannot be fetched
+    let memberId: string | null = null;
+    let memberName = 'LinkedIn User';
+
+    try {
+      const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        if (profile.sub) {
           memberId = `urn:li:person:${profile.sub}`;
           memberName = profile.name || profile.given_name || 'LinkedIn User';
         }
-      } catch (pErr) {
-        console.warn('Could not fetch LinkedIn userinfo:', pErr);
+      } else {
+        console.warn('LinkedIn profile fetch failed:', { status: profileRes.status });
       }
+    } catch (pErr) {
+      console.warn('Could not fetch LinkedIn userinfo:', pErr);
+    }
+
+    // FIX #4: Fail if memberId could not be resolved
+    if (!memberId) {
+      console.error('Could not resolve LinkedIn member ID from profile API');
+      const res = NextResponse.redirect(new URL('/settings?error=linkedin_profile_failed', req.url));
+      res.cookies.delete('oauth_state');
+      res.cookies.delete('oauth_uid');
+      return res;
     }
 
     const connection: LinkedInConnection = {
@@ -124,8 +160,9 @@ export async function GET(req: NextRequest) {
     response.cookies.delete('oauth_uid');
 
     return response;
-  } catch (err: any) {
-    console.error('LinkedIn OAuth processing error:', err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('LinkedIn OAuth processing error:', message);
     const response = NextResponse.redirect(
       new URL('/settings?error=linkedin_server_error', req.url)
     );

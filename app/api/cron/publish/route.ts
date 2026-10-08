@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserContent, updateContentItem, getLinkedInConnection } from '@/services/firestoreService';
+import { adminDb } from '@/lib/firebaseAdmin';
 import { runQualityCheck } from '@/services/qualityCheckService';
 import { publishToLinkedIn } from '@/services/linkedinPublishingService';
+import { ContentItem, LinkedInConnection } from '@/types';
 
 export async function GET(req: NextRequest) {
   return handleCronPublish(req);
@@ -27,83 +28,147 @@ async function handleCronPublish(req: NextRequest) {
     }
   }
 
-  const userId = 'user_autopilot_demo';
-
   try {
-    const allPosts = await getUserContent(userId);
     const now = new Date();
 
-    // Item 4: Human Approval Mode guard
-    // ONLY posts with status 'SCHEDULED' or 'APPROVED' are eligible for automated publishing.
-    // Unapproved 'DRAFT' posts are strictly filtered out.
-    const duePosts = allPosts.filter((item) => {
-      if (item.status !== 'SCHEDULED' && item.status !== 'APPROVED') {
-        return false;
+    // FIX #1: Discover due posts across ALL users using Firebase Admin SDK (server-side).
+    // No hardcoded userId — each post carries its own userId.
+    const contentRef = adminDb.collection('content');
+    const scheduledSnap = await contentRef
+      .where('status', 'in', ['SCHEDULED', 'APPROVED'])
+      .get();
+
+    const allDuePosts: ContentItem[] = [];
+    scheduledSnap.forEach((docSnap) => {
+      const data = docSnap.data() as ContentItem;
+      // Only include posts that are due (no scheduledAt or scheduledAt <= now)
+      if (!data.scheduledAt || new Date(data.scheduledAt) <= now) {
+        allDuePosts.push({ ...data, id: docSnap.id });
       }
-      if (!item.scheduledAt) return true;
-      return new Date(item.scheduledAt) <= now;
     });
 
-    const results = [];
+    console.log(`[CRON] Found ${allDuePosts.length} due posts to process at ${now.toISOString()}`);
 
-    for (const post of duePosts) {
-      // Item 6: Double-publish prevention check
-      if (post.status === 'PUBLISHED') {
-        results.push({ id: post.id, status: 'SKIPPED_ALREADY_PUBLISHED' });
+    const results: Array<{
+      id: string;
+      userId: string;
+      status: string;
+      failureReason?: string;
+      linkedinPostId?: string;
+    }> = [];
+
+    for (const post of allDuePosts) {
+      // Validate post.userId exists
+      if (!post.userId) {
+        await adminDb.collection('content').doc(post.id).update({
+          status: 'FAILED',
+          failureReason: 'Post is missing userId. Cannot determine LinkedIn connection.',
+          updatedAt: new Date().toISOString(),
+        });
+        console.error(`[CRON] Post ${post.id}: FAILED — missing userId`);
+        results.push({ id: post.id, userId: '', status: 'FAILED', failureReason: 'Missing userId' });
         continue;
       }
 
-      // Item 5: Quality Check execution before publishing
-      const quality = runQualityCheck(post, allPosts);
+      // Item 6: Double-publish prevention check
+      if (post.status === 'PUBLISHED') {
+        console.log(`[CRON] Post ${post.id}: SKIPPED — already published`);
+        results.push({ id: post.id, userId: post.userId, status: 'SKIPPED_ALREADY_PUBLISHED' });
+        continue;
+      }
+
+      // Item 5: Quality Check — fetch all user posts for duplicate detection
+      const userContentSnap = await adminDb.collection('content')
+        .where('userId', '==', post.userId)
+        .get();
+      const allUserPosts: ContentItem[] = [];
+      userContentSnap.forEach((d) => allUserPosts.push(d.data() as ContentItem));
+
+      const quality = runQualityCheck(post, allUserPosts);
       if (!quality.passed) {
-        await updateContentItem(post.id, {
+        await adminDb.collection('content').doc(post.id).update({
           status: 'FAILED',
           failureReason: quality.reason || 'Failed automated quality check.',
           updatedAt: new Date().toISOString(),
         });
-        results.push({ id: post.id, status: 'FAILED', reason: quality.reason });
+        console.warn(`[CRON] Post ${post.id}: FAILED quality check — ${quality.reason}`);
+        results.push({ id: post.id, userId: post.userId, status: 'FAILED', failureReason: quality.reason });
         continue;
       }
 
-      // Item 6: Atomic status lock to prevent concurrent execution double-posting
-      await updateContentItem(post.id, {
-        status: 'PUBLISHED', // Lock status atomically
-        updatedAt: new Date().toISOString(),
-      });
+      // FIX #1: Fetch LinkedIn connection using the post's own userId
+      const connectionDoc = await adminDb.collection('linkedin_connections').doc(post.userId).get();
+      const connection: LinkedInConnection | null = connectionDoc.exists
+        ? (connectionDoc.data() as LinkedInConnection)
+        : null;
 
-      // Item 8 & 9: Official LinkedIn Publishing via server-side Posts API
-      const connection = await getLinkedInConnection(userId);
+      // FIX #5: Token expiration check
+      if (connection && connection.expiresAt) {
+        const expiresAt = new Date(connection.expiresAt);
+        if (expiresAt <= now) {
+          await adminDb.collection('content').doc(post.id).update({
+            status: 'FAILED',
+            failureReason: 'LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.',
+            updatedAt: new Date().toISOString(),
+          });
+          console.warn(`[CRON] Post ${post.id}: FAILED — LinkedIn token expired at ${connection.expiresAt}`);
+          results.push({
+            id: post.id,
+            userId: post.userId,
+            status: 'FAILED',
+            failureReason: 'LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.',
+          });
+          continue;
+        }
+      }
+
+      // FIX #2: Do NOT publish if connection is missing/invalid — let publishToLinkedIn validate
       const publishResult = await publishToLinkedIn(post, connection);
 
       if (publishResult.success) {
-        await updateContentItem(post.id, {
+        // Only mark PUBLISHED after LinkedIn confirms success
+        await adminDb.collection('content').doc(post.id).update({
           status: 'PUBLISHED',
-          linkedinPostId: publishResult.linkedinPostId || `urn:li:share:${Date.now()}`,
+          linkedinPostId: publishResult.linkedinPostId || null,
           publishedAt: new Date().toISOString(),
           failureReason: null,
           updatedAt: new Date().toISOString(),
         });
-        results.push({ id: post.id, status: 'PUBLISHED', linkedinPostId: publishResult.linkedinPostId });
+        console.log(`[CRON] Post ${post.id}: PUBLISHED — linkedinPostId=${publishResult.linkedinPostId}`);
+        results.push({
+          id: post.id,
+          userId: post.userId,
+          status: 'PUBLISHED',
+          linkedinPostId: publishResult.linkedinPostId,
+        });
       } else {
-        // Revert status to FAILED with stored failure reason if API call failed
-        await updateContentItem(post.id, {
+        // Mark FAILED with useful reason
+        await adminDb.collection('content').doc(post.id).update({
           status: 'FAILED',
           failureReason: publishResult.errorReason || 'LinkedIn publishing failed.',
           updatedAt: new Date().toISOString(),
         });
-        results.push({ id: post.id, status: 'FAILED', reason: publishResult.errorReason });
+        console.error(`[CRON] Post ${post.id}: FAILED — ${publishResult.errorReason}`);
+        results.push({
+          id: post.id,
+          userId: post.userId,
+          status: 'FAILED',
+          failureReason: publishResult.errorReason,
+        });
       }
     }
 
+    // FIX #3: Clear, structured cron response
     return NextResponse.json({
       timestamp: new Date().toISOString(),
-      processedCount: duePosts.length,
+      processedCount: allDuePosts.length,
       results,
     });
-  } catch (err: any) {
-    console.error('Vercel Cron Automation Exception:', err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[CRON] Vercel Cron Automation Exception:', message);
     return NextResponse.json(
-      { error: 'Vercel cron processing error', details: err.message },
+      { error: 'Vercel cron processing error', details: message },
       { status: 500 }
     );
   }
