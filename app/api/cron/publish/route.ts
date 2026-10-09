@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { runQualityCheck } from '@/services/qualityCheckService';
 import { publishToLinkedIn } from '@/services/linkedinPublishingService';
+import { parseScheduledAt, getDatePartsInTimezone } from '@/lib/scheduling';
 import { ContentItem, LinkedInConnection } from '@/types';
 
 export async function GET(req: NextRequest) {
@@ -30,8 +31,10 @@ async function handleCronPublish(req: NextRequest) {
 
   try {
     const now = new Date();
+    const nowIST = getDatePartsInTimezone(now, 'Asia/Kolkata');
+    console.log(`[CRON] Current time — UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2,'0')}-${String(nowIST.day).padStart(2,'0')} ${String(nowIST.hour).padStart(2,'0')}:${String(nowIST.minute).padStart(2,'0')}:${String(nowIST.second).padStart(2,'0')}`);
 
-    // FIX #1: Discover due posts across ALL users using Firebase Admin SDK (server-side).
+    // Discover due posts across ALL users using Firebase Admin SDK (server-side).
     // No hardcoded userId — each post carries its own userId.
     const contentRef = adminDb.collection('content');
     const scheduledSnap = await contentRef
@@ -41,13 +44,17 @@ async function handleCronPublish(req: NextRequest) {
     const allDuePosts: ContentItem[] = [];
     scheduledSnap.forEach((docSnap) => {
       const data = docSnap.data() as ContentItem;
-      // Only include posts that are due (no scheduledAt or scheduledAt <= now)
-      if (!data.scheduledAt || new Date(data.scheduledAt) <= now) {
+      // Safely parse scheduledAt (handles ISO string, Firestore Timestamp, epoch millis)
+      const scheduledDate = parseScheduledAt(data.scheduledAt);
+      if (!scheduledDate || scheduledDate.getTime() <= now.getTime()) {
         allDuePosts.push({ ...data, id: docSnap.id });
+      } else {
+        const schedIST = getDatePartsInTimezone(scheduledDate, 'Asia/Kolkata');
+        console.log(`[CRON] Post ${docSnap.id}: not yet due — scheduledAt UTC: ${scheduledDate.toISOString()}, IST: ${String(schedIST.hour).padStart(2,'0')}:${String(schedIST.minute).padStart(2,'0')}`);
       }
     });
 
-    console.log(`[CRON] Found ${allDuePosts.length} due posts to process at ${now.toISOString()}`);
+    console.log(`[CRON] Found ${allDuePosts.length} due posts to process`);
 
     const results: Array<{
       id: string;
@@ -96,11 +103,23 @@ async function handleCronPublish(req: NextRequest) {
         continue;
       }
 
-      // FIX #1: Fetch LinkedIn connection using the post's own userId
+      // Fetch LinkedIn connection using the post's own userId
       const connectionDoc = await adminDb.collection('linkedin_connections').doc(post.userId).get();
       const connection: LinkedInConnection | null = connectionDoc.exists
         ? (connectionDoc.data() as LinkedInConnection)
         : null;
+
+      // Validate that the connection belongs to this post's userId
+      if (connection && connection.userId !== post.userId) {
+        await adminDb.collection('content').doc(post.id).update({
+          status: 'FAILED',
+          failureReason: `LinkedIn connection userId mismatch: connection belongs to ${connection.userId}, post belongs to ${post.userId}.`,
+          updatedAt: new Date().toISOString(),
+        });
+        console.error(`[CRON] Post ${post.id}: FAILED — userId mismatch (connection: ${connection.userId}, post: ${post.userId})`);
+        results.push({ id: post.id, userId: post.userId, status: 'FAILED', failureReason: 'LinkedIn connection userId mismatch' });
+        continue;
+      }
 
       // FIX #5: Token expiration check
       if (connection && connection.expiresAt) {

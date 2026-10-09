@@ -6,6 +6,7 @@ import { getUserContent, getUserTopics, getUserSettings, saveContentItem, update
 import { performTopicResearch } from '@/services/researchService';
 import { generateLinkedInPostContent } from '@/services/aiService';
 import { generateTopicVisual } from '@/services/visualService';
+import { getNextScheduledSlot } from '@/lib/scheduling';
 import { ContentItem, Topic, UserSettings } from '@/types';
 import { Sparkles, FileText, CheckCircle2, Trash2, Edit3, ExternalLink, Clock, RefreshCw, Layers, Check, X, ShieldAlert } from 'lucide-react';
 
@@ -74,11 +75,12 @@ export default function ContentPage() {
       // Step 3: Visual Generation
       const imageUrl = await generateTopicVisual(selectedTopic, postContent.hook);
 
-      // Default schedule time: tomorrow at configured posting time
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const [hours, minutes] = (settings?.postingTime || '09:00').split(':');
-      tomorrow.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+      // IST-aware scheduling: pick the next valid posting slot
+      const scheduledAtISO = getNextScheduledSlot(
+        new Date(),
+        settings?.postingTime || '09:00',
+        settings?.timezone || 'Asia/Kolkata'
+      );
 
       // Check Mode
       const isFullAuto = settings?.publishingMode === 'Full Auto';
@@ -96,7 +98,7 @@ export default function ContentPage() {
         imageUrl,
         sourceUrls: research.sourceUrls,
         status: initialStatus,
-        scheduledAt: tomorrow.toISOString(),
+        scheduledAt: scheduledAtISO,
         publishedAt: null,
         linkedinPostId: null,
         failureReason: null,
@@ -124,7 +126,12 @@ export default function ContentPage() {
   };
 
   const handleSchedule = async (item: ContentItem) => {
-    const defaultTime = item.scheduledAt || new Date(Date.now() + 86400000).toISOString();
+    // Use existing scheduledAt if present, otherwise compute the next IST slot
+    const defaultTime = item.scheduledAt || getNextScheduledSlot(
+      new Date(),
+      settings?.postingTime || '09:00',
+      settings?.timezone || 'Asia/Kolkata'
+    );
     await updateContentItem(item.id, {
       status: 'SCHEDULED',
       scheduledAt: defaultTime,
