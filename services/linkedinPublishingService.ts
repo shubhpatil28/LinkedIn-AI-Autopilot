@@ -96,13 +96,17 @@ export async function publishToLinkedIn(
       const linkedinPostId = headerPostId || bodyPostId;
 
       if (!linkedinPostId) {
-        // LinkedIn 201 with no post ID — still a success but log a warning
+        // LinkedIn 201 with no post ID — prevent fake publishing
         console.warn('[LinkedIn API] Success response but no post ID found in headers or body');
+        return {
+          success: false,
+          errorReason: 'LinkedIn API did not return a verifiable post ID. Post may have been published but cannot be confirmed.',
+        };
       }
 
       return {
         success: true,
-        linkedinPostId: linkedinPostId || undefined,
+        linkedinPostId: linkedinPostId,
       };
     } else {
       const errorText = await response.text();
