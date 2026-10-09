@@ -1,4 +1,6 @@
 import { ContentItem, LinkedInConnection } from '@/types';
+import { sanitizePostContent } from '@/services/aiService';
+import { runQualityCheck } from '@/services/qualityCheckService';
 
 export interface LinkedInPublishResult {
   success: boolean;
@@ -52,8 +54,32 @@ export async function publishToLinkedIn(
     };
   }
 
+  // Pre-publish sanitization & quality check guardrail
+  const sanitized = sanitizePostContent({
+    hook: content.hook,
+    body: content.body,
+    cta: content.cta,
+    hashtags: content.hashtags,
+  });
+
+  const sanitizedContent: ContentItem = {
+    ...content,
+    hook: sanitized.hook,
+    body: sanitized.body,
+    cta: sanitized.cta,
+    hashtags: sanitized.hashtags,
+  };
+
+  const qualityCheck = runQualityCheck(sanitizedContent);
+  if (!qualityCheck.passed) {
+    return {
+      success: false,
+      errorReason: qualityCheck.reason || 'Failed pre-publishing quality check guardrail.',
+    };
+  }
+
   // Construct full post text according to required structure: Hook + Body + CTA + Hashtags
-  const fullPostText = `${content.hook}\n\n${content.body}\n\n${content.cta}\n\n${content.hashtags.join(' ')}`;
+  const fullPostText = `${sanitizedContent.hook}\n\n${sanitizedContent.body}\n\n${sanitizedContent.cta}\n\n${sanitizedContent.hashtags.join(' ')}`;
 
   try {
     // Official LinkedIn REST Posts API endpoint (POST https://api.linkedin.com/rest/posts)
