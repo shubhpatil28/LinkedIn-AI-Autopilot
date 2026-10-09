@@ -13,7 +13,14 @@ import { db } from '@/lib/firebase';
 import { Topic, ContentItem, UserSettings, LinkedInConnection } from '@/types';
 
 // Default initial topics if user has none
-export const DEFAULT_TOPICS = ['AI', 'Coding', 'JavaScript', 'React', 'Web Development'];
+export const DEFAULT_TOPICS = [
+  'AI & LLMs',
+  'React & Next.js',
+  'TypeScript & JavaScript',
+  'Backend & Databases',
+  'Debugging & Architecture',
+  'DevOps & Automation',
+];
 
 // Default user settings
 export const DEFAULT_SETTINGS: Omit<UserSettings, 'userId' | 'updatedAt'> = {
