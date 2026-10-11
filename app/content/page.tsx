@@ -73,7 +73,7 @@ export default function ContentPage() {
       );
 
       // Step 3: Visual Generation
-      const imageUrl = await generateTopicVisual(selectedTopic, postContent.hook);
+      const imageUrl = await generateTopicVisual(selectedTopic, postContent.hook, postContent.body);
 
       // IST-aware scheduling: pick the next valid posting slot
       const scheduledAtISO = getNextScheduledSlot(

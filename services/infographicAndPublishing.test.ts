@@ -290,6 +290,107 @@ async function runTests() {
   }
 
   // ---------------------------------------------------------------------------
+  // Test 9: Total Absence of foreignObject Across All Topics
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 9: Strict Absence of foreignObject in All Generated SVGs ---');
+  {
+    const topicsToTest = [
+      'AI & LLMs',
+      'React & Next.js',
+      'TypeScript & JavaScript',
+      'Backend & Databases',
+      'Debugging & Architecture',
+      'DevOps & Automation',
+      'Unknown Custom Topic',
+    ];
+
+    for (const topic of topicsToTest) {
+      const svg = generateTopicVisualSvg(topic, `Deep dive into ${topic}`);
+      assert(!svg.includes('<foreignObject'), `No <foreignObject tag in ${topic} SVG`);
+      assert(!svg.includes('foreignObject>'), `No foreignObject closing tag in ${topic} SVG`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 10: Content-Aware AI Agent Safety Layout & Required Labels
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 10: AI Agent Safety Diagram Architecture & Required Labels ---');
+  {
+    const aiSafetyHook = '🤖 The biggest mistake developers make with AI agents is giving them unconstrained tools.';
+    const aiSafetyBody = 'Autonomous AI workflows sound incredible until an unhandled edge case causes infinite API loops.\n\n3 safety practices for building production-ready AI tools:\n1. Deterministic Guardrails: Set hard upper bounds on execution steps.\n2. Human-in-the-Loop Triggers: Require explicit user approval.\n3. Comprehensive Audit Tracing: Log prompt inputs and tool arguments.';
+
+    const svg = generateTopicVisualSvg('AI & LLMs', aiSafetyHook, aiSafetyBody);
+
+    assert(svg.includes('User Request'), 'Contains "User Request" stage');
+    assert(svg.includes('Agent Orchestrator'), 'Contains "Agent Orchestrator" stage');
+    assert(svg.includes('Tool Execution'), 'Contains "Tool Execution" stage');
+    assert(svg.includes('Safety Guardrails'), 'Contains "Safety Guardrails" governance node');
+    assert(svg.includes('Human Approval'), 'Contains "Human Approval" governance node');
+    assert(svg.includes('Audit Logs'), 'Contains "Audit Logs" observability stage');
+    assert(svg.includes('AI AGENT ARCHITECTURE &amp; SAFETY CONTROLS'), 'Contains AI safety badge');
+    assert(!svg.includes('<foreignObject'), 'Zero foreignObject in AI Safety diagram');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 11: SVG Validation Guardrail (validateSvgOutput)
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 11: SVG Validation Guardrail ---');
+  {
+    const validSvg = generateTopicVisualSvg('AI & LLMs', 'Test Headline');
+    const { validateSvgOutput } = await import('./serverVisualService');
+
+    let threwForValid = false;
+    try {
+      validateSvgOutput(validSvg);
+    } catch {
+      threwForValid = true;
+    }
+    assert(!threwForValid, 'validateSvgOutput passes for generated SVG');
+
+    let threwForForeignObject = false;
+    try {
+      validateSvgOutput('<svg width="1200" height="630"><foreignObject><div>test</div></foreignObject><text>1</text><text>2</text><text>3</text><text>4</text><text>5</text></svg>');
+    } catch (err: any) {
+      threwForForeignObject = err.message.includes('foreignObject detected');
+    }
+    assert(threwForForeignObject, 'validateSvgOutput rejects foreignObject');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 12: Topic-Specific Layout Verification
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 12: Topic-Specific Layout Specialization ---');
+  {
+    const tsSvg = generateTopicVisualSvg('TypeScript & JavaScript', 'Type Guard Patterns');
+    assert(tsSvg.includes('typescript-pattern.ts'), 'TypeScript generates code editor layout');
+    assert(tsSvg.includes('Discriminated Result Union'), 'TypeScript contains code comment callouts');
+
+    const devopsSvg = generateTopicVisualSvg('DevOps & Automation', 'CI/CD Pipeline Flow');
+    assert(devopsSvg.includes('AUTOMATION &amp; CI/CD RELEASE PIPELINES'), 'DevOps generates pipeline layout');
+
+    const debugSvg = generateTopicVisualSvg('Debugging & Architecture', 'Root Cause Analysis');
+    assert(debugSvg.includes('SYSTEM DIAGNOSTICS &amp; ROOT CAUSE ANALYSIS'), 'Debugging generates diagnostic layout');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 13: PNG Buffer Validation for AI Safety Infographic
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 13: High-Quality PNG Conversion for AI Agent Safety ---');
+  {
+    const aiSafetyHook = '🤖 The biggest mistake developers make with AI agents is giving them unconstrained tools.';
+    const aiSafetyBody = 'Autonomous AI workflows sound incredible until an unhandled edge case causes infinite API loops.';
+    const svg = generateTopicVisualSvg('AI & LLMs', aiSafetyHook, aiSafetyBody);
+    const pngBuffer = await convertSvgToPngBuffer(svg);
+
+    assert(Buffer.isBuffer(pngBuffer), 'PNG output is valid Buffer');
+    assert(pngBuffer.length > 10000, `AI Safety PNG has rich graphic density (${pngBuffer.length} bytes > 10KB)`);
+
+    // PNG signature check: 89 50 4E 47 0D 0A 1A 0A
+    const isPngHeader = pngBuffer[0] === 0x89 && pngBuffer[1] === 0x50 && pngBuffer[2] === 0x4E && pngBuffer[3] === 0x47;
+    assert(isPngHeader, 'Valid PNG binary signature header');
+  }
+
+  // ---------------------------------------------------------------------------
   // Summary
   // ---------------------------------------------------------------------------
   log('\n========================================');

@@ -190,7 +190,7 @@ export async function publishToLinkedIn(
       if (content.imageUrl.startsWith('data:image/svg+xml') || content.imageUrl.includes('<svg')) {
         pngBuffer = await convertSvgToPngBuffer(content.imageUrl);
       } else {
-        const svg = generateTopicVisualSvg(content.topic, content.hook);
+        const svg = generateTopicVisualSvg(content.topic, content.hook, content.body);
         pngBuffer = await convertSvgToPngBuffer(svg);
       }
 
