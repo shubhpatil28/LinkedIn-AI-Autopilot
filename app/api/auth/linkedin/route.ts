@@ -1,24 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { adminAuth } from '@/lib/firebaseAdmin';
+import { isDynamicServerError } from 'next/dist/client/components/hooks-server-context';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
+  // Read request headers outside of try/catch to let Next.js properly handle dynamic prerender bailout
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return NextResponse.json(
+      { error: 'Unauthorized: Missing or invalid Authorization header' },
+      { status: 401 }
+    );
+  }
+
+  const idToken = authHeader.split('Bearer ')[1]?.trim();
+  if (!idToken) {
+    return NextResponse.json({ error: 'Unauthorized: Empty ID token' }, { status: 401 });
+  }
+
   try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Missing or invalid Authorization header' },
-        { status: 401 }
-      );
-    }
-
-    const idToken = authHeader.split('Bearer ')[1]?.trim();
-    if (!idToken) {
-      return NextResponse.json({ error: 'Unauthorized: Empty ID token' }, { status: 401 });
-    }
-
     let uid: string;
     try {
       const decodedToken = await adminAuth.verifyIdToken(idToken);
@@ -36,7 +39,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // FIX #4: Fail clearly if production environment variables are missing
+    // Fail clearly if production environment variables are missing
     const clientId = process.env.LINKEDIN_CLIENT_ID;
     if (!clientId) {
       console.error('LINKEDIN_CLIENT_ID environment variable is not set');
@@ -85,6 +88,10 @@ export async function GET(req: NextRequest) {
 
     return response;
   } catch (globalErr: unknown) {
+    if (isDynamicServerError(globalErr)) {
+      throw globalErr;
+    }
+
     const errObj = globalErr as { name?: string; message?: string };
     console.error('Unhandled error in /api/auth/linkedin route handler:', {
       name: errObj?.name || 'UnknownError',
