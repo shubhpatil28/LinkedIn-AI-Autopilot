@@ -284,6 +284,31 @@ export function determineDiagramConfig(topic: string, hookTitle?: string, postBo
     };
   }
 
+  // AI Application / Production Engineering Lessons
+  if (
+    normTopic.includes('ai') &&
+    (textContent.includes('what actually worked') || textContent.includes('production') || textContent.includes('built') || textContent.includes('application'))
+  ) {
+    return {
+      badge: 'AI APPLICATION & PRODUCTION ARCHITECTURE',
+      title: hookTitle || 'Building AI-Powered Applications: Production Architecture',
+      category: 'workflow',
+      bgGrad: ['#070B14', '#0F172A'],
+      accentColor: '#38BDF8',
+      nodes: [
+        { step: '01', title: 'Token Streaming', subtitle: 'Sub-200ms TTFT Client', color: '#38BDF8', iconType: 'brain' },
+        { step: '02', title: 'Deterministic Guard', subtitle: 'Code Circuit Breakers', color: '#818CF8', iconType: 'shield' },
+        { step: '03', title: 'Model Routing', subtitle: 'Tiered Task Allocation', color: '#C084FC', iconType: 'tool' },
+        { step: '04', title: 'Continuous Eval', subtitle: 'Automated Golden Datasets', color: '#34D399', iconType: 'check' },
+      ],
+      takeaways: [
+        'Deterministic fallbacks beat prompt tweaking for reliability',
+        'Token streaming delivers instant perceived performance',
+        'Continuous automated evaluation catches model drift early',
+      ],
+    };
+  }
+
   // Fallback: AI & LLM Core Pipeline
   return {
     badge: 'ARTIFICIAL INTELLIGENCE & LLM ARCHITECTURE',
@@ -292,7 +317,7 @@ export function determineDiagramConfig(topic: string, hookTitle?: string, postBo
     bgGrad: ['#070B14', '#0F172A'],
     accentColor: '#38BDF8',
     nodes: [
-      { step: '01', title: 'Query &amp; Embeddings', subtitle: 'Vector RAG Retrieval', color: '#38BDF8', iconType: 'brain' },
+      { step: '01', title: 'Query & Embeddings', subtitle: 'Vector RAG Retrieval', color: '#38BDF8', iconType: 'brain' },
       { step: '02', title: 'Semantic Cache', subtitle: '75% Cost Reduction', color: '#818CF8', iconType: 'tool' },
       { step: '03', title: 'LLM Inference', subtitle: 'Targeted Prompting', color: '#C084FC', iconType: 'code' },
       { step: '04', title: 'Schema Guard', subtitle: 'Strict JSON Validation', color: '#34D399', iconType: 'shield' },

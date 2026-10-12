@@ -47,6 +47,7 @@ async function handleCronPublish(req: NextRequest) {
       // Safely parse scheduledAt (handles ISO string, Firestore Timestamp, epoch millis)
       const scheduledDate = parseScheduledAt(data.scheduledAt);
       if (!scheduledDate || scheduledDate.getTime() <= now.getTime()) {
+        console.log(`[CRON] Post ${docSnap.id}: Discovered eligible — status=${data.status}, topic="${data.topic || 'unknown'}", scheduledAt=${data.scheduledAt}`);
         allDuePosts.push({ ...data, id: docSnap.id });
       } else {
         const schedIST = getDatePartsInTimezone(scheduledDate, 'Asia/Kolkata');
@@ -59,6 +60,7 @@ async function handleCronPublish(req: NextRequest) {
     const results: Array<{
       id: string;
       userId: string;
+      topic?: string;
       status: string;
       failureReason?: string;
       linkedinPostId?: string;
@@ -72,15 +74,15 @@ async function handleCronPublish(req: NextRequest) {
           failureReason: 'Post is missing userId. Cannot determine LinkedIn connection.',
           updatedAt: new Date().toISOString(),
         });
-        console.error(`[CRON] Post ${post.id}: FAILED — missing userId`);
-        results.push({ id: post.id, userId: '', status: 'FAILED', failureReason: 'Missing userId' });
+        console.error(`[CRON] Post ${post.id}: FAILED — missing userId in post record`);
+        results.push({ id: post.id, userId: '', topic: post.topic, status: 'FAILED', failureReason: 'Missing userId' });
         continue;
       }
 
       // Item 6: Double-publish prevention check
       if (post.status === 'PUBLISHED') {
         console.log(`[CRON] Post ${post.id}: SKIPPED — already published`);
-        results.push({ id: post.id, userId: post.userId, status: 'SKIPPED_ALREADY_PUBLISHED' });
+        results.push({ id: post.id, userId: post.userId, topic: post.topic, status: 'SKIPPED_ALREADY_PUBLISHED' });
         continue;
       }
 
@@ -98,12 +100,13 @@ async function handleCronPublish(req: NextRequest) {
           failureReason: quality.reason || 'Failed automated quality check.',
           updatedAt: new Date().toISOString(),
         });
-        console.warn(`[CRON] Post ${post.id}: FAILED quality check — ${quality.reason}`);
-        results.push({ id: post.id, userId: post.userId, status: 'FAILED', failureReason: quality.reason });
+        const hookSnippet = post.hook ? `"${post.hook.slice(0, 50)}..."` : 'N/A';
+        console.warn(`[CRON] Post ${post.id}: REJECTED by quality guardrail — reason="${quality.reason}", topic="${post.topic}", hook=${hookSnippet}`);
+        results.push({ id: post.id, userId: post.userId, topic: post.topic, status: 'FAILED', failureReason: quality.reason });
         continue;
       }
 
-      // Fetch LinkedIn connection using the post's own userId
+      // Fetch LinkedIn connection using the post's own userId (Never log tokens or secrets!)
       const connectionDoc = await adminDb.collection('linkedin_connections').doc(post.userId).get();
       const connection: LinkedInConnection | null = connectionDoc.exists
         ? (connectionDoc.data() as LinkedInConnection)
@@ -116,12 +119,12 @@ async function handleCronPublish(req: NextRequest) {
           failureReason: `LinkedIn connection userId mismatch: connection belongs to ${connection.userId}, post belongs to ${post.userId}.`,
           updatedAt: new Date().toISOString(),
         });
-        console.error(`[CRON] Post ${post.id}: FAILED — userId mismatch (connection: ${connection.userId}, post: ${post.userId})`);
-        results.push({ id: post.id, userId: post.userId, status: 'FAILED', failureReason: 'LinkedIn connection userId mismatch' });
+        console.error(`[CRON] Post ${post.id}: FAILED — userId mismatch between post and LinkedIn connection`);
+        results.push({ id: post.id, userId: post.userId, topic: post.topic, status: 'FAILED', failureReason: 'LinkedIn connection userId mismatch' });
         continue;
       }
 
-      // FIX #5: Token expiration check
+      // FIX #5: Token expiration check (Sanitized logging: log expiration date, NEVER token contents)
       if (connection && connection.expiresAt) {
         const expiresAt = new Date(connection.expiresAt);
         if (expiresAt <= now) {
@@ -130,16 +133,19 @@ async function handleCronPublish(req: NextRequest) {
             failureReason: 'LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.',
             updatedAt: new Date().toISOString(),
           });
-          console.warn(`[CRON] Post ${post.id}: FAILED — LinkedIn token expired at ${connection.expiresAt}`);
+          console.warn(`[CRON] Post ${post.id}: FAILED — LinkedIn OAuth token expired at ${connection.expiresAt}`);
           results.push({
             id: post.id,
             userId: post.userId,
+            topic: post.topic,
             status: 'FAILED',
             failureReason: 'LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.',
           });
           continue;
         }
       }
+
+      console.log(`[CRON] Post ${post.id}: Connection validated — memberId=${connection?.memberId ? connection.memberId.slice(0, 15) + '...' : 'none'}, imagePresent=${Boolean(post.imageUrl)}`);
 
       // FIX #2: Do NOT publish if connection is missing/invalid — let publishToLinkedIn validate
       const publishResult = await publishToLinkedIn(post, connection);
@@ -153,24 +159,26 @@ async function handleCronPublish(req: NextRequest) {
           failureReason: null,
           updatedAt: new Date().toISOString(),
         });
-        console.log(`[CRON] Post ${post.id}: PUBLISHED — linkedinPostId=${publishResult.linkedinPostId}`);
+        console.log(`[CRON] Post ${post.id}: PUBLISHED successfully — linkedinPostId=${publishResult.linkedinPostId}`);
         results.push({
           id: post.id,
           userId: post.userId,
+          topic: post.topic,
           status: 'PUBLISHED',
           linkedinPostId: publishResult.linkedinPostId,
         });
       } else {
-        // Mark FAILED with useful reason
+        // Mark FAILED with useful sanitized reason
         await adminDb.collection('content').doc(post.id).update({
           status: 'FAILED',
           failureReason: publishResult.errorReason || 'LinkedIn publishing failed.',
           updatedAt: new Date().toISOString(),
         });
-        console.error(`[CRON] Post ${post.id}: FAILED — ${publishResult.errorReason}`);
+        console.error(`[CRON] Post ${post.id}: FAILED publishing — reason="${publishResult.errorReason}"`);
         results.push({
           id: post.id,
           userId: post.userId,
+          topic: post.topic,
           status: 'FAILED',
           failureReason: publishResult.errorReason,
         });

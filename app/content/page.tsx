@@ -8,6 +8,7 @@ import { generateLinkedInPostContent } from '@/services/aiService';
 import { generateTopicVisual } from '@/services/visualService';
 import { getNextScheduledSlot } from '@/lib/scheduling';
 import { ContentItem, Topic, UserSettings } from '@/types';
+import { runQualityCheck } from '@/services/qualityCheckService';
 import { Sparkles, FileText, CheckCircle2, Trash2, Edit3, ExternalLink, Clock, RefreshCw, Layers, Check, X, ShieldAlert } from 'lucide-react';
 
 export default function ContentPage() {
@@ -64,12 +65,13 @@ export default function ContentPage() {
       // Step 1: Topic Research
       const research = await performTopicResearch(selectedTopic);
 
-      // Step 2: AI Content Generation
+      // Step 2: AI Content Generation (with existing post duplicate awareness)
       const postContent = await generateLinkedInPostContent(
         selectedTopic,
         research,
         settings?.writingStyle || 'Professional & Technical',
-        settings?.language || 'English'
+        settings?.language || 'English',
+        contentList
       );
 
       // Step 3: Visual Generation
@@ -106,6 +108,15 @@ export default function ContentPage() {
         updatedAt: new Date().toISOString(),
       };
 
+      // Quality validation before saving to prevent duplicate or malformed posts
+      const quality = runQualityCheck(newItem, contentList);
+      if (!quality.passed) {
+        console.warn('Newly generated post failed quality check:', quality.reason);
+        alert(`Generated post warning: ${quality.reason}. Adjusting to draft.`);
+        newItem.status = 'DRAFT';
+        newItem.failureReason = quality.reason || null;
+      }
+
       await saveContentItem(newItem);
       await loadData();
     } catch (err) {
@@ -126,6 +137,13 @@ export default function ContentPage() {
   };
 
   const handleSchedule = async (item: ContentItem) => {
+    // Validate quality and duplicate status against all existing posts before scheduling
+    const quality = runQualityCheck(item, contentList);
+    if (!quality.passed) {
+      alert(`Cannot schedule post: ${quality.reason}`);
+      return;
+    }
+
     // Use existing scheduledAt if present, otherwise compute the next IST slot
     const defaultTime = item.scheduledAt || getNextScheduledSlot(
       new Date(),
@@ -135,6 +153,7 @@ export default function ContentPage() {
     await updateContentItem(item.id, {
       status: 'SCHEDULED',
       scheduledAt: defaultTime,
+      failureReason: null, // Clear stale failure reason upon successful validation
       updatedAt: new Date().toISOString(),
     });
     await loadData();

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getUserContent, updateContentItem, deleteContentItem } from '@/services/firestoreService';
 import { ContentItem, ContentStatus } from '@/types';
+import { runQualityCheck } from '@/services/qualityCheckService';
 import { Calendar as CalendarIcon, Clock, Edit3, Trash2, CheckCircle2, AlertCircle, FileText, X, Sparkles, Filter, ChevronRight } from 'lucide-react';
 
 export default function CalendarPage() {
@@ -55,11 +56,27 @@ export default function CalendarPage() {
   const handleSaveSchedule = async () => {
     if (!editingItem) return;
     const newScheduledAt = scheduleDateTime ? new Date(scheduleDateTime).toISOString() : editingItem.scheduledAt;
+
+    // Validate quality & duplicate check before saving schedule
+    const candidateItem: ContentItem = {
+      ...editingItem,
+      hook: editHook,
+      body: editBody,
+      scheduledAt: newScheduledAt,
+    };
+
+    const quality = runQualityCheck(candidateItem, contentList);
+    if (!quality.passed) {
+      alert(`Cannot save schedule: ${quality.reason}`);
+      return;
+    }
+
     await updateContentItem(editingItem.id, {
       hook: editHook,
       body: editBody,
       scheduledAt: newScheduledAt,
       status: editingItem.status === 'DRAFT' ? 'SCHEDULED' : editingItem.status,
+      failureReason: null, // Clear failureReason on successful validation
       updatedAt: new Date().toISOString(),
     });
     setEditingItem(null);
