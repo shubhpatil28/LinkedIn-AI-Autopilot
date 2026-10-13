@@ -391,6 +391,175 @@ async function runTests() {
   }
 
   // ---------------------------------------------------------------------------
+  // Test 14: SVG text elements have non-empty content for all 4 layout types
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 14: SVG Text Content Non-Empty Across All Layout Types ---');
+  {
+    const { validateSvgTextContent } = await import('./serverVisualService');
+
+    const layouts = [
+      { topic: 'AI & LLMs', hook: 'Production AI agent safety and guardrails', body: 'Deterministic guardrails and human-in-the-loop triggers for AI safety.' },
+      { topic: 'TypeScript & JavaScript', hook: 'Advanced TypeScript type patterns', body: '' },
+      { topic: 'React & Next.js', hook: 'React 19 Server Actions', body: '' },
+      { topic: 'Backend & Databases', hook: 'Idempotent API processing pipeline', body: '' },
+    ];
+
+    for (const { topic, hook, body } of layouts) {
+      const svg = generateTopicVisualSvg(topic, hook, body);
+
+      // Every <text> element must have visible content
+      let threw = false;
+      try {
+        validateSvgTextContent(svg);
+      } catch (e: any) {
+        threw = true;
+        log(`  ERROR in ${topic}: ${e.message}`);
+      }
+      assert(!threw, `No empty <text> elements in "${topic}" SVG`);
+
+      // Keyword spot-checks: confirm actual expected strings exist in SVG text
+      if (topic.includes('AI')) {
+        assert(svg.includes('User Request'), `AI Safety SVG contains "User Request" text`);
+        assert(svg.includes('Safety Guardrails'), `AI Safety SVG contains "Safety Guardrails" text`);
+      }
+      if (topic.includes('TypeScript')) {
+        assert(svg.includes('Result'), `TypeScript SVG contains code content`);
+        assert(svg.includes('Principle'), `TypeScript SVG contains principle sidebar`);
+      }
+      if (topic.includes('React')) {
+        assert(svg.includes('Server Component'), `React SVG contains "Server Component" node`);
+        assert(svg.includes('Optimistic UI'), `React SVG contains "Optimistic UI" node`);
+      }
+      if (topic.includes('Backend')) {
+        assert(svg.includes('API Gateway'), `Backend SVG contains "API Gateway" node`);
+        assert(svg.includes('Redis Cache Lock'), `Backend SVG contains "Redis Cache Lock" node`);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 15: PNG pixel non-uniformity — rendered PNG must not be a solid color
+  // (A solid-color PNG means all text/graphics were dropped during rasterization)
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 15: PNG Pixel Diversity — Rendered PNG Must Have Multiple Colors ---');
+  {
+    const parsePngIhdr = (buf: Buffer): { width: number; height: number } => {
+      // PNG: 8-byte sig + 4-byte chunk length + 4-byte 'IHDR' + 4-byte W + 4-byte H
+      if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) {
+        throw new Error('Not a valid PNG file');
+      }
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      return { width, height };
+    };
+
+    const testTopics = [
+      { topic: 'AI & LLMs', hook: 'Production AI safety architecture', body: 'Safety guardrails and human-in-the-loop.' },
+      { topic: 'TypeScript & JavaScript', hook: 'TypeScript design patterns', body: '' },
+      { topic: 'React & Next.js', hook: 'React Server Components', body: '' },
+      { topic: 'Backend & Databases', hook: 'Distributed API processing', body: '' },
+    ];
+
+    for (const { topic, hook, body } of testTopics) {
+      const svg = generateTopicVisualSvg(topic, hook, body);
+      const pngBuffer = await convertSvgToPngBuffer(svg);
+
+      // Check dimensions via IHDR
+      const { width, height } = parsePngIhdr(pngBuffer);
+      assert(width === 1200, `"${topic}" PNG width is 1200px (got ${width})`);
+      assert(height === 630, `"${topic}" PNG height is 630px (got ${height})`);
+
+      // Sample raw bytes from different regions of the PNG IDAT data
+      // A blank/text-invisible PNG will have very few unique byte patterns.
+      // Count distinct byte values across a sample of 512 bytes deep in the data.
+      const sampleStart = Math.floor(pngBuffer.length * 0.3); // skip PNG header
+      const sampleEnd = Math.min(sampleStart + 512, pngBuffer.length);
+      const sample = pngBuffer.slice(sampleStart, sampleEnd);
+      const uniqueBytes = new Set(Array.from(sample)).size;
+
+      // A solid-color or near-blank PNG will have very few unique byte values
+      // (IDAT is zlib-compressed so even blank images have some entropy,
+      // but rendered text + gradients produce significantly higher byte diversity)
+      assert(uniqueBytes >= 20,
+        `"${topic}" PNG has sufficient byte diversity (${uniqueBytes} unique byte values, indicating rendered content)`
+      );
+
+      // Size sanity: fonts + text + gradient should produce at least 50KB
+      assert(pngBuffer.length > 50000,
+        `"${topic}" PNG file size indicates real content (${pngBuffer.length} bytes > 50KB)`
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 16: Font presence detection — render two PNGs, one with font and one
+  // without (using an invalid font path), and assert they differ. This directly
+  // verifies that the font loading code path is active and affects the output.
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 16: Font Loading Has Observable Effect on PNG Output ---');
+  {
+    const { Resvg } = await import('@resvg/resvg-js');
+    const svg = generateTopicVisualSvg('React & Next.js', 'Server Components Architecture');
+
+    // Render WITH fonts (production path via convertSvgToPngBuffer)
+    const withFontBuffer = await convertSvgToPngBuffer(svg);
+
+    // Render WITHOUT fonts (no font options — what old code did)
+    const resvgNoFont = new Resvg(svg, {
+      fitTo: { mode: 'width', value: 1200 },
+      font: { loadSystemFonts: false }, // empty font DB — simulates Vercel before fix
+    });
+    const noFontPngData = resvgNoFont.render();
+    const withoutFontBuffer = noFontPngData.asPng();
+
+    // The two PNGs must differ because text renders differently with vs without fonts
+    const areDifferent = !withFontBuffer.equals(withoutFontBuffer);
+    assert(areDifferent,
+      'PNG rendered with bundled font differs from PNG rendered without font ' +
+      '(proves font loading has a real effect on output)'
+    );
+
+    // The with-font version should be larger (text adds pixel variation → less compression)
+    const sizeDiffBytes = withFontBuffer.length - withoutFontBuffer.length;
+    log(`  Font effect: with-font=${withFontBuffer.length}B, without-font=${withoutFontBuffer.length}B, diff=${sizeDiffBytes}B`);
+    assert(withFontBuffer.length !== withoutFontBuffer.length,
+      `With-font PNG size (${withFontBuffer.length}B) differs from without-font PNG size (${withoutFontBuffer.length}B)`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 17: No empty <text> tags guard in validateSvgTextContent
+  // ---------------------------------------------------------------------------
+  log('\n--- Test 17: validateSvgTextContent Rejects Empty Text Elements ---');
+  {
+    const { validateSvgTextContent } = await import('./serverVisualService');
+
+    // Should pass on valid generated SVG
+    const validSvg = generateTopicVisualSvg('DevOps & Automation', 'CI/CD Pipeline Architecture');
+    let threwForValid = false;
+    try { validateSvgTextContent(validSvg); } catch { threwForValid = true; }
+    assert(!threwForValid, 'validateSvgTextContent passes for fully-populated generated SVG');
+
+    // Should reject SVG with a blank <text> element
+    const svgWithEmptyText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+      <text x="100" y="100" font-family="Inter">Hello</text>
+      <text x="200" y="200" font-family="Inter"></text>
+    </svg>`;
+    let threwForEmpty = false;
+    try { validateSvgTextContent(svgWithEmptyText); } catch { threwForEmpty = true; }
+    assert(threwForEmpty, 'validateSvgTextContent rejects SVG containing empty <text></text> element');
+
+    // Should reject SVG with whitespace-only <text> element
+    const svgWithWhitespaceText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+      <text x="100" y="100" font-family="Inter">STEP 01</text>
+      <text x="200" y="200" font-family="Inter">   </text>
+    </svg>`;
+    let threwForWhitespace = false;
+    try { validateSvgTextContent(svgWithWhitespaceText); } catch { threwForWhitespace = true; }
+    assert(threwForWhitespace, 'validateSvgTextContent rejects SVG containing whitespace-only <text> element');
+  }
+
+  // ---------------------------------------------------------------------------
   // Summary
   // ---------------------------------------------------------------------------
   log('\n========================================');
@@ -406,3 +575,4 @@ runTests().catch((err) => {
   log('EXCEPTION IN TESTS: ' + String(err));
   process.exit(1);
 });
+
