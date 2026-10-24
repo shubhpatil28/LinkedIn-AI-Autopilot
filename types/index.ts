@@ -27,6 +27,8 @@ export interface ContentItem {
   publishedAt: string | null;
   linkedinPostId: string | null;
   failureReason?: string | null;
+  /** Idempotency key set during Full Auto generation to prevent duplicate posts on concurrent cron runs */
+  generationRunId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -40,6 +42,8 @@ export interface UserSettings {
   language: string;
   writingStyle: string;
   publishingMode: PublishingMode;
+  /** Persistent cursor for round-robin topic rotation in Full Auto mode */
+  lastTopicIndex?: number;
   updatedAt: string;
 }
 
