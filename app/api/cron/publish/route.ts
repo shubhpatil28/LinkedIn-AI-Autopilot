@@ -33,14 +33,14 @@ async function handleCronPublish(req: NextRequest) {
 
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
   if (dryRun) {
-    console.log("[CRON] DRY-RUN mode enabled — no Firestore writes or LinkedIn publishes");
+    console.log("[CRON] DRY-RUN mode enabled ï¿½ no Firestore writes or LinkedIn publishes");
   }
 
   try {
     const now = new Date();
     const nowIST = getDatePartsInTimezone(now, "Asia/Kolkata");
     console.log(
-      `[CRON] Current time — UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2, "0")}-${String(nowIST.day).padStart(2, "0")} ${String(nowIST.hour).padStart(2, "0")}:${String(nowIST.minute).padStart(2, "0")}:${String(nowIST.second).padStart(2, "0")}`
+      `[CRON] Current time ï¿½ UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2, "0")}-${String(nowIST.day).padStart(2, "0")} ${String(nowIST.hour).padStart(2, "0")}:${String(nowIST.minute).padStart(2, "0")}:${String(nowIST.second).padStart(2, "0")}`
     );
 
     const autoGenResults: Array<{
@@ -64,7 +64,7 @@ async function handleCronPublish(req: NextRequest) {
       for (const userSettings of fullAutoUsers) {
         const userId = userSettings.userId;
         if (!userId) {
-          console.warn("[CRON] Phase 0: Settings doc missing userId — skipping");
+          console.warn("[CRON] Phase 0: Settings doc missing userId ï¿½ skipping");
           continue;
         }
 
@@ -89,12 +89,12 @@ async function handleCronPublish(req: NextRequest) {
 
           if (result.status === "generated") {
             console.log(
-              `[CRON] Phase 0: ${dryRun ? "[DRY-RUN] " : ""}Generated post for user ${userId} — postId=${result.generationResult?.post?.id ?? "dry-run"}`
+              `[CRON] Phase 0: ${dryRun ? "[DRY-RUN] " : ""}Generated post for user ${userId} ï¿½ postId=${result.generationResult?.post?.id ?? "dry-run"}`
             );
           } else if (result.status === "skipped") {
-            console.log(`[CRON] Phase 0: Skipped user ${userId} — ${result.errorReason}`);
+            console.log(`[CRON] Phase 0: Skipped user ${userId} ï¿½ ${result.errorReason}`);
           } else {
-            console.error(`[CRON] Phase 0: Failed for user ${userId} — ${result.errorReason}`);
+            console.error(`[CRON] Phase 0: Failed for user ${userId} ï¿½ ${result.errorReason}`);
           }
         } catch (userErr) {
           const msg = userErr instanceof Error ? userErr.message : String(userErr);
@@ -109,7 +109,7 @@ async function handleCronPublish(req: NextRequest) {
     }
 
     console.log(
-      `[CRON] Phase 0 complete — generated=${autoGenResults.filter((r) => r.status === "generated").length}, skipped=${autoGenResults.filter((r) => r.status === "skipped").length}, failed=${autoGenResults.filter((r) => r.status === "failed" || r.status === "error").length}`
+      `[CRON] Phase 0 complete ï¿½ generated=${autoGenResults.filter((r) => r.status === "generated").length}, skipped=${autoGenResults.filter((r) => r.status === "skipped").length}, failed=${autoGenResults.filter((r) => r.status === "failed" || r.status === "error").length}`
     );
 
     const contentRef = adminDb.collection("content");
@@ -121,13 +121,13 @@ async function handleCronPublish(req: NextRequest) {
       const scheduledDate = parseScheduledAt(data.scheduledAt);
       if (!scheduledDate || scheduledDate.getTime() <= now.getTime()) {
         console.log(
-          `[CRON] Phase 1: Post ${docSnap.id}: Discovered eligible — status=${data.status}, topic="${data.topic || "unknown"}", scheduledAt=${data.scheduledAt}`
+          `[CRON] Phase 1: Post ${docSnap.id}: Discovered eligible ï¿½ status=${data.status}, topic="${data.topic || "unknown"}", scheduledAt=${data.scheduledAt}`
         );
         allDuePosts.push({ ...data, id: docSnap.id });
       } else {
         const schedIST = getDatePartsInTimezone(scheduledDate, "Asia/Kolkata");
         console.log(
-          `[CRON] Phase 1: Post ${docSnap.id}: not yet due — scheduledAt UTC: ${scheduledDate.toISOString()}, IST: ${String(schedIST.hour).padStart(2, "0")}:${String(schedIST.minute).padStart(2, "0")}`
+          `[CRON] Phase 1: Post ${docSnap.id}: not yet due ï¿½ scheduledAt UTC: ${scheduledDate.toISOString()}, IST: ${String(schedIST.hour).padStart(2, "0")}:${String(schedIST.minute).padStart(2, "0")}`
         );
       }
     });
@@ -152,13 +152,13 @@ async function handleCronPublish(req: NextRequest) {
             updatedAt: new Date().toISOString(),
           });
         }
-        console.error(`[CRON] Post ${post.id}: FAILED — missing userId in post record`);
+        console.error(`[CRON] Post ${post.id}: FAILED ï¿½ missing userId in post record`);
         results.push({ id: post.id, userId: "", topic: post.topic, status: "FAILED", failureReason: "Missing userId" });
         continue;
       }
 
       if (post.status === "PUBLISHED") {
-        console.log(`[CRON] Post ${post.id}: SKIPPED — already published`);
+        console.log(`[CRON] Post ${post.id}: SKIPPED ï¿½ already published`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "SKIPPED_ALREADY_PUBLISHED" });
         continue;
       }
@@ -176,7 +176,7 @@ async function handleCronPublish(req: NextRequest) {
             updatedAt: new Date().toISOString(),
           });
         }
-        console.warn(`[CRON] Post ${post.id}: REJECTED by quality guardrail — reason="${quality.reason}"`);
+        console.warn(`[CRON] Post ${post.id}: REJECTED by quality guardrail ï¿½ reason="${quality.reason}"`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: quality.reason });
         continue;
       }
@@ -212,7 +212,7 @@ async function handleCronPublish(req: NextRequest) {
       }
 
       if (dryRun) {
-        console.log(`[CRON] DRY-RUN: Would publish post ${post.id} — skipping`);
+        console.log(`[CRON] DRY-RUN: Would publish post ${post.id} ï¿½ skipping`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "DRY_RUN_SKIPPED" });
         continue;
       }
