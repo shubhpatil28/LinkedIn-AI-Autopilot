@@ -48,6 +48,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-4">
       <div className="w-full max-w-md space-y-8 bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl">
         <div className="text-center space-y-2">
+          <img src="/images/ai-autopilot-logo.svg" alt="AI Autopilot Logo" className="w-16 h-16 mx-auto rounded-2xl mb-2" />
           <div className="inline-flex items-center justify-center p-3 bg-blue-600/10 rounded-2xl text-blue-500 mb-2">
             <Linkedin className="w-10 h-10" />
           </div>
@@ -154,3 +155,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+

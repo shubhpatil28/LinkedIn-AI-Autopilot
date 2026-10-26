@@ -4,7 +4,8 @@ import { AuthProvider } from '@/components/AuthProvider';
 import { Navigation } from '@/components/Navigation';
 
 export const metadata: Metadata = {
-  title: 'LinkedIn AI Autopilot — AI Content Automation for LinkedIn',
+  icons: { icon: '/favicon.svg', shortcut: '/favicon.svg', apple: '/images/ai-autopilot-icon.svg' },
+  title: 'LinkedIn AI Autopilot � AI Content Automation for LinkedIn',
   description: 'Automate high-impact LinkedIn technical content generation, visual design, scheduling, and official publishing.',
 };
 

@@ -96,7 +96,7 @@ export function Navigation({ children }: { children: React.ReactNode }) {
         {/* Mobile Header Navigation */}
         <header className="md:hidden flex items-center justify-between bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-50">
           <div className="flex items-center gap-2">
-            <Linkedin className="w-6 h-6 text-blue-500" />
+            <img src="/images/ai-autopilot-logo.svg" alt="AI Autopilot Logo" className="w-6 h-6 rounded-lg" />
             <span className="font-bold text-sm text-white">AI Autopilot</span>
           </div>
           <div className="flex items-center gap-1">
@@ -124,3 +124,4 @@ export function Navigation({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
