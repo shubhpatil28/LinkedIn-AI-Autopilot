@@ -52,17 +52,17 @@ async function handleCronPublish(req: NextRequest) {
 
     try {
       console.log("[CRON] Phase 0: Fetching Full Auto users...");
-      const settingsSnap = await adminDb
-        .collection("settings")
-        .where("publishingMode", "==", "Full Auto")
-        .get();
+      const settingsSnap = await adminDb.collection("settings").where("publishingMode", "==", "Full Auto").get();
 
-      const fullAutoUsers: UserSettings[] = [];
-      settingsSnap.forEach((d) => fullAutoUsers.push(d.data() as UserSettings));
+      const fullAutoUsers: Array<UserSettings & { _docId?: string }> = [];
+      settingsSnap.forEach((d) => {
+        const data = d.data() as UserSettings;
+        fullAutoUsers.push({ ...data, userId: (data as any).userId || d.id, _docId: d.id } as any);
+      });
       console.log(`[CRON] Phase 0: Found ${fullAutoUsers.length} Full Auto user(s)`);
 
       for (const userSettings of fullAutoUsers) {
-        const userId = userSettings.userId;
+        const userId = (userSettings as any).userId || (userSettings as any)._docId;
         if (!userId) {
           console.warn("[CRON] Phase 0: Settings doc missing userId � skipping");
           continue;
@@ -73,13 +73,15 @@ async function handleCronPublish(req: NextRequest) {
           const connDoc = await adminDb.collection("linkedin_connections").doc(userId).get();
           if (connDoc.exists) {
             connection = connDoc.data() as LinkedInConnection;
+          } else {
+            console.warn(`[CRON] Phase 0: No linkedin_connections doc for user ${userId}`);
           }
         } catch (connErr) {
           console.warn(`[CRON] Phase 0: Failed to fetch LinkedIn connection for user ${userId}:`, connErr);
         }
 
         try {
-          const result = await runFullAutoForUser(userId, userSettings, connection, dryRun);
+          const result = await runFullAutoForUser(userId, { ...userSettings, userId } as UserSettings, connection, dryRun);
           autoGenResults.push({
             userId,
             status: result.status,
@@ -88,9 +90,7 @@ async function handleCronPublish(req: NextRequest) {
           });
 
           if (result.status === "generated") {
-            console.log(
-              `[CRON] Phase 0: ${dryRun ? "[DRY-RUN] " : ""}Generated post for user ${userId} � postId=${result.generationResult?.post?.id ?? "dry-run"}`
-            );
+            console.log(`[CRON] Phase 0: ${dryRun ? "[DRY-RUN] " : ""}Generated post for user ${userId} � postId=${result.generationResult?.post?.id ?? "dry-run"}`);
           } else if (result.status === "skipped") {
             console.log(`[CRON] Phase 0: Skipped user ${userId} � ${result.errorReason}`);
           } else {
@@ -108,9 +108,10 @@ async function handleCronPublish(req: NextRequest) {
       autoGenResults.push({ userId: "PHASE_0_FATAL", status: "error", reason: msg });
     }
 
-    console.log(
-      `[CRON] Phase 0 complete � generated=${autoGenResults.filter((r) => r.status === "generated").length}, skipped=${autoGenResults.filter((r) => r.status === "skipped").length}, failed=${autoGenResults.filter((r) => r.status === "failed" || r.status === "error").length}`
-    );
+    console.log(`[CRON] Phase 0 complete � generated=${autoGenResults.filter((r) => r.status === "generated").length}, skipped=${autoGenResults.filter((r) => r.status === "skipped").length}, failed=${autoGenResults.filter((r) => r.status === "failed" || r.status === "error").length}`);
+    autoGenResults.forEach((r) => {
+      console.log(`[CRON] Phase 0 detail � user=${r.userId} status=${r.status} reason=${r.reason || "n/a"} postId=${r.postId || "n/a"}`);
+    });
 
     const contentRef = adminDb.collection("content");
     const scheduledSnap = await contentRef.where("status", "in", ["SCHEDULED", "APPROVED"]).get();
@@ -120,15 +121,8 @@ async function handleCronPublish(req: NextRequest) {
       const data = docSnap.data() as ContentItem;
       const scheduledDate = parseScheduledAt(data.scheduledAt);
       if (!scheduledDate || scheduledDate.getTime() <= now.getTime()) {
-        console.log(
-          `[CRON] Phase 1: Post ${docSnap.id}: Discovered eligible � status=${data.status}, topic="${data.topic || "unknown"}", scheduledAt=${data.scheduledAt}`
-        );
+        console.log(`[CRON] Phase 1: Post ${docSnap.id}: Discovered eligible � status=${data.status}, topic="${data.topic || "unknown"}", scheduledAt=${data.scheduledAt}`);
         allDuePosts.push({ ...data, id: docSnap.id });
-      } else {
-        const schedIST = getDatePartsInTimezone(scheduledDate, "Asia/Kolkata");
-        console.log(
-          `[CRON] Phase 1: Post ${docSnap.id}: not yet due � scheduledAt UTC: ${scheduledDate.toISOString()}, IST: ${String(schedIST.hour).padStart(2, "0")}:${String(schedIST.minute).padStart(2, "0")}`
-        );
       }
     });
 
@@ -146,94 +140,56 @@ async function handleCronPublish(req: NextRequest) {
     for (const post of allDuePosts) {
       if (!post.userId) {
         if (!dryRun) {
-          await adminDb.collection("content").doc(post.id).update({
-            status: "FAILED",
-            failureReason: "Post is missing userId. Cannot determine LinkedIn connection.",
-            updatedAt: new Date().toISOString(),
-          });
+          await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: "Post is missing userId. Cannot determine LinkedIn connection.", updatedAt: new Date().toISOString() });
         }
-        console.error(`[CRON] Post ${post.id}: FAILED � missing userId in post record`);
         results.push({ id: post.id, userId: "", topic: post.topic, status: "FAILED", failureReason: "Missing userId" });
         continue;
       }
-
       if (post.status === "PUBLISHED") {
-        console.log(`[CRON] Post ${post.id}: SKIPPED � already published`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "SKIPPED_ALREADY_PUBLISHED" });
         continue;
       }
-
       const userContentSnap = await adminDb.collection("content").where("userId", "==", post.userId).get();
       const allUserPosts: ContentItem[] = [];
       userContentSnap.forEach((d) => allUserPosts.push(d.data() as ContentItem));
-
       const quality = runQualityCheck(post, allUserPosts);
       if (!quality.passed) {
         if (!dryRun) {
-          await adminDb.collection("content").doc(post.id).update({
-            status: "FAILED",
-            failureReason: quality.reason || "Failed automated quality check.",
-            updatedAt: new Date().toISOString(),
-          });
+          await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: quality.reason || "Failed automated quality check.", updatedAt: new Date().toISOString() });
         }
-        console.warn(`[CRON] Post ${post.id}: REJECTED by quality guardrail � reason="${quality.reason}"`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: quality.reason });
         continue;
       }
-
       const connectionDoc = await adminDb.collection("linkedin_connections").doc(post.userId).get();
       const connection: LinkedInConnection | null = connectionDoc.exists ? (connectionDoc.data() as LinkedInConnection) : null;
-
       if (connection && (connection as any).userId && (connection as any).userId !== post.userId) {
         if (!dryRun) {
-          await adminDb.collection("content").doc(post.id).update({
-            status: "FAILED",
-            failureReason: `LinkedIn connection userId mismatch`,
-            updatedAt: new Date().toISOString(),
-          });
+          await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: "LinkedIn connection userId mismatch", updatedAt: new Date().toISOString() });
         }
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: "LinkedIn connection userId mismatch" });
         continue;
       }
-
       if (connection && connection.expiresAt) {
         const expiresAt = new Date(connection.expiresAt);
         if (expiresAt <= now) {
           if (!dryRun) {
-            await adminDb.collection("content").doc(post.id).update({
-              status: "FAILED",
-              failureReason: "LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.",
-              updatedAt: new Date().toISOString(),
-            });
+            await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: "LinkedIn OAuth token expired. Reconnect LinkedIn in Settings.", updatedAt: new Date().toISOString() });
           }
           results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: "LinkedIn OAuth token expired" });
           continue;
         }
       }
-
       if (dryRun) {
         console.log(`[CRON] DRY-RUN: Would publish post ${post.id} � skipping`);
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "DRY_RUN_SKIPPED" });
         continue;
       }
-
       const publishResult = await publishToLinkedIn(post, connection);
-
       if (publishResult.success) {
-        await adminDb.collection("content").doc(post.id).update({
-          status: "PUBLISHED",
-          linkedinPostId: publishResult.linkedinPostId || null,
-          publishedAt: new Date().toISOString(),
-          failureReason: null,
-          updatedAt: new Date().toISOString(),
-        });
+        await adminDb.collection("content").doc(post.id).update({ status: "PUBLISHED", linkedinPostId: publishResult.linkedinPostId || null, publishedAt: new Date().toISOString(), failureReason: null, updatedAt: new Date().toISOString() });
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "PUBLISHED", linkedinPostId: publishResult.linkedinPostId });
       } else {
-        await adminDb.collection("content").doc(post.id).update({
-          status: "FAILED",
-          failureReason: publishResult.errorReason || "LinkedIn publishing failed.",
-          updatedAt: new Date().toISOString(),
-        });
+        await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: publishResult.errorReason || "LinkedIn publishing failed.", updatedAt: new Date().toISOString() });
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: publishResult.errorReason });
       }
     }
