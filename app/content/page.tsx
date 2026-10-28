@@ -195,7 +195,7 @@ export default function ContentPage() {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header & Generator Toolbar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+      <div className="flex flex-col gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-400 mb-1">
             <Sparkles className="w-4 h-4" />
@@ -208,11 +208,11 @@ export default function ContentPage() {
         </div>
 
         {/* Generator Controls */}
-        <div className="flex items-center gap-3 bg-slate-950 p-2 border border-slate-800 rounded-xl">
+        <div className="flex flex-wrap items-center gap-3 w-full min-w-0 bg-slate-950 p-2 border border-slate-800 rounded-xl">
           <select
             value={selectedTopic}
             onChange={(e) => setSelectedTopic(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 min-w-0 w-full max-w-full box-border bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {topics.map((t) => (
               <option key={t.id} value={t.name}>
@@ -224,7 +224,7 @@ export default function ContentPage() {
           <button
             onClick={handleGenerate}
             disabled={generating || topics.length === 0}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition shadow-lg shadow-blue-600/25 disabled:opacity-50 shrink-0"
+            className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition shadow-lg shadow-blue-600/25 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
             {generating ? 'Researching & Generating...' : 'Generate Post'}
