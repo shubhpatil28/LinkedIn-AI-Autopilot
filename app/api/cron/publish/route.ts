@@ -40,7 +40,7 @@ async function handleCronPublish(req: NextRequest) {
     const now = new Date();
     const nowIST = getDatePartsInTimezone(now, "Asia/Kolkata");
     console.log(
-      `[CRON] Current time � UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2, "0")}-${String(nowIST.day).padStart(2, "0")} ${String(nowIST.hour).padStart(2, "0")}:${String(nowIST.minute).padStart(2, "0")}:${String(nowIST.second).padStart(2, "0")}`
+      `[CRON][TIMING] START � UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2, "0")}-${String(nowIST.day).padStart(2, "0")} ${String(nowIST.hour).padStart(2, "0")}:${String(nowIST.minute).padStart(2, "0")}:${String(nowIST.second).padStart(2, "0")}`
     );
 
     const autoGenResults: Array<{
