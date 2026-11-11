@@ -9,3 +9,4 @@ Module._resolveFilename = function (request, parent, isMain, options) {
 };
 require('sucrase/register');
 require(path.resolve(process.argv[2]));
+

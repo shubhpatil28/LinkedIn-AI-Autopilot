@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Full Auto Mode - Per-User Generation Pipeline
  *
  * Orchestrates the complete end-to-end pipeline for Full Auto users:
