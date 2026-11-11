@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node scripts/test-runner.js services/qualityCheckService.test.ts && node scripts/test-runner.js services/infographicAndPublishing.test.ts && node scripts/test-runner.js services/duplicatePrevention.test.ts && node scripts/test-runner.js services/fullAutoMode.test.ts && node scripts/test-runner.js services/rootCauseFixes.test.ts"
+    "test": "node scripts/test-runner.js services/qualityCheckService.test.ts && node scripts/test-runner.js services/infographicAndPublishing.test.ts && node scripts/test-runner.js services/duplicatePrevention.test.ts && node scripts/test-runner.js services/fullAutoMode.test.ts && node scripts/test-runner.js services/rootCauseFixes.test.ts && node scripts/test-runner.js services/visualEngine2.test.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",

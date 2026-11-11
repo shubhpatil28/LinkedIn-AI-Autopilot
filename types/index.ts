@@ -2,6 +2,14 @@ export type ContentStatus = 'DRAFT' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | '
 
 export type PublishingMode = 'Human Approval' | 'Full Auto';
 
+export type VisualStyle =
+  | 'premium_3d'
+  | 'modern_editorial'
+  | 'isometric_tech'
+  | 'futuristic_ai'
+  | 'code_developer'
+  | 'data_visualization';
+
 export interface Topic {
   id: string;
   userId: string;
@@ -29,6 +37,9 @@ export interface ContentItem {
   failureReason?: string | null;
   /** Idempotency key set during Full Auto generation to prevent duplicate posts on concurrent cron runs */
   generationRunId?: string | null;
+  /** Visual engine style & template metadata for diverse rotation */
+  visualStyle?: VisualStyle | string;
+  visualTemplate?: string;
   createdAt: string;
   updatedAt: string;
 }

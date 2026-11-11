@@ -24,6 +24,7 @@ import { performTopicResearch } from './researchService';
 import { generateLinkedInPostContent } from './aiService';
 import { generateTopicVisualSvg } from './visualService';
 import { convertSvgToPngBuffer, validateSvgOutput, validateSvgTextContent } from './serverVisualService';
+import { generatePostImage } from './imageProviderService';
 import { runQualityCheck } from './qualityCheckService';
 import { ContentItem, UserSettings, LinkedInConnection, Topic } from '@/types';
 
@@ -266,42 +267,28 @@ export async function generateAndPersistPost(
     };
   }
 
-  // 4. SVG Infographic Generation + Validation
-  console.log(`[AutoGen] User ${userId}: Generating infographic for "${topicName}"`);
-  let svgString: string;
-  let pngBuffer: Buffer;
-
+  // 4. Visual Generation + Validation (Visual Engine 2.0)
+  console.log(`[AutoGen] User ${userId}: Generating visual for "${topicName}"`);
+  let visualResult;
   try {
-    svgString = generateTopicVisualSvg(topicName, generated.hook, generated.body);
+    const recentVisualHistory = existingPosts
+      .filter((p) => p.visualStyle || p.visualTemplate)
+      .slice(0, 10)
+      .map((p) => ({ visualStyle: p.visualStyle, visualTemplate: p.visualTemplate }));
+
+    visualResult = await generatePostImage({
+      topic: topicName,
+      hook: generated.hook,
+      body: generated.body,
+      recentHistory: recentVisualHistory,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { generated: false, errorReason: `SVG generation failed: ${msg}`, dryRun };
+    return { generated: false, errorReason: `Visual generation failed: ${msg}`, dryRun };
   }
 
-  try {
-    validateSvgOutput(svgString);
-    validateSvgTextContent(svgString);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { generated: false, errorReason: `SVG validation failed: ${msg}`, dryRun };
-  }
-
-  try {
-    pngBuffer = await convertSvgToPngBuffer(svgString);
-    if (!pngBuffer || pngBuffer.length < 10000) {
-      return {
-        generated: false,
-        errorReason: `PNG buffer too small (${pngBuffer?.length ?? 0} bytes) - infographic may be blank`,
-        dryRun,
-      };
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { generated: false, errorReason: `SVG->PNG conversion failed: ${msg}`, dryRun };
-  }
-
-  // Encode SVG as data URL (consistent with manual creation flow)
-  const imageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+  const pngBuffer = visualResult.buffer;
+  const imageUrl = visualResult.imageUrl;
 
   // Build candidate ID and ContentItem
   const candidateId = `auto_${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -315,6 +302,8 @@ export async function generateAndPersistPost(
     cta: generated.cta,
     hashtags: generated.hashtags,
     imageUrl,
+    visualStyle: visualResult.visualStyle,
+    visualTemplate: visualResult.visualTemplate,
     sourceUrls: research.sourceUrls,
     status: 'SCHEDULED',
     scheduledAt: slotUtc.toISOString(),

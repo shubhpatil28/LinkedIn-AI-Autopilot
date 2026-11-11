@@ -187,7 +187,11 @@ export async function publishToLinkedIn(
   if (content.imageUrl) {
     try {
       let pngBuffer: Buffer;
-      if (content.imageUrl.startsWith('data:image/svg+xml') || content.imageUrl.includes('<svg')) {
+      if (content.imageUrl.startsWith('data:image/png;base64,')) {
+        pngBuffer = Buffer.from(content.imageUrl.substring('data:image/png;base64,'.length), 'base64');
+      } else if (content.imageUrl.startsWith('data:image/jpeg;base64,')) {
+        pngBuffer = Buffer.from(content.imageUrl.substring('data:image/jpeg;base64,'.length), 'base64');
+      } else if (content.imageUrl.startsWith('data:image/svg+xml') || content.imageUrl.includes('<svg')) {
         pngBuffer = await convertSvgToPngBuffer(content.imageUrl);
       } else {
         const svg = generateTopicVisualSvg(content.topic, content.hook, content.body);

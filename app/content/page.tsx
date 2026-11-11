@@ -5,7 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { getUserContent, getUserTopics, getUserSettings, saveContentItem, updateContentItem, deleteContentItem } from '@/services/firestoreService';
 import { performTopicResearch } from '@/services/researchService';
 import { generateLinkedInPostContent } from '@/services/aiService';
-import { generateTopicVisual } from '@/services/visualService';
+import { generateTopicVisual, generateEnrichedTopicVisualSvg } from '@/services/visualService';
 import { getNextScheduledSlot } from '@/lib/scheduling';
 import { ContentItem, Topic, UserSettings } from '@/types';
 import { runQualityCheck } from '@/services/qualityCheckService';
@@ -112,7 +112,15 @@ export default function ContentPage() {
       }
 
       // Step 3: Visual Generation
-      const imageUrl = await generateTopicVisual(selectedTopic, postContent.hook, postContent.body);
+      const recentVisualHistory = contentList
+        .filter((c) => c.visualStyle || c.visualTemplate)
+        .slice(0, 10)
+        .map((c) => ({ visualStyle: c.visualStyle, visualTemplate: c.visualTemplate }));
+
+      const enrichedVisual = generateEnrichedTopicVisualSvg(selectedTopic, postContent.hook, postContent.body, {
+        recentHistory: recentVisualHistory,
+      });
+      const imageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(enrichedVisual.svg)}`;
 
       // IST-aware scheduling: pick the next valid posting slot
       const scheduledAtISO = getNextScheduledSlot(
@@ -135,6 +143,8 @@ export default function ContentPage() {
         cta: postContent.cta,
         hashtags: postContent.hashtags,
         imageUrl,
+        visualStyle: enrichedVisual.visualStyle,
+        visualTemplate: enrichedVisual.visualTemplate,
         sourceUrls: finalResearch.sourceUrls,
         status: initialStatus,
         scheduledAt: scheduledAtISO,
