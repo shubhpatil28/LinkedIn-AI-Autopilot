@@ -69,6 +69,12 @@ export function sanitizePostContent(payload: GeneratedContentPayload): Generated
   };
 }
 
+export const DEFAULT_GEMINI_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+];
+
 export async function generateLinkedInPostContent(
   topic: string,
   research: ResearchResult,
@@ -85,12 +91,22 @@ export async function generateLinkedInPostContent(
     .slice(0, 10);
 
   if (apiKey) {
-    try {
-      const forbiddenContext = recentHooks.length > 0
-        ? `\nCRITICAL ANTI-DUPLICATION RULE: You MUST NOT repeat, paraphrase, or closely match any of these existing post hooks:\n${recentHooks.map((h) => `- "${h}"`).join('\n')}\n`
-        : '';
+    const configuredModel = process.env.GEMINI_MODEL || process.env.AI_MODEL;
+    const candidateModels: string[] = [];
+    if (configuredModel) {
+      candidateModels.push(configuredModel.trim());
+    }
+    for (const model of DEFAULT_GEMINI_MODELS) {
+      if (!candidateModels.includes(model)) {
+        candidateModels.push(model);
+      }
+    }
 
-      const prompt = `You are a top-tier senior software engineer and technical leader writing an authentic, high-value LinkedIn post about "${topic}".
+    const forbiddenContext = recentHooks.length > 0
+      ? `\nCRITICAL ANTI-DUPLICATION RULE: You MUST NOT repeat, paraphrase, or closely match any of these existing post hooks:\n${recentHooks.map((h) => `- "${h}"`).join('\n')}\n`
+      : '';
+
+    const prompt = `You are a top-tier senior software engineer and technical leader writing an authentic, high-value LinkedIn post about "${topic}".
 Language: ${language}
 Writing Style: ${writingStyle}
 Research Context: "${research.summary}"
@@ -104,58 +120,89 @@ REQUIREMENTS:
 
 Return STRICT JSON with keys: "hook", "body", "cta", "hashtags" (array of strings).`;
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' },
-          }),
-        }
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const cleanedText = text
-            .replace(/^```json\s*/i, '')
-            .replace(/^```\s*/, '')
-            .replace(/\s*```$/, '')
-            .trim();
-
-          const parsed = JSON.parse(cleanedText);
-          const rawPayload: GeneratedContentPayload = {
-            hook: parsed.hook || `Key architectural lessons when working with ${topic}.`,
-            body: parsed.body || research.summary,
-            cta: parsed.cta || `What has been your experience with ${topic}? Let's discuss below!`,
-            hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
-              ? parsed.hashtags
-              : [`#${topic.replace(/\s+/g, '')}`, '#SoftwareEngineering', '#Coding'],
-          };
-
-          const sanitized = sanitizePostContent(rawPayload);
-
-          // Verify sanitized output is not a duplicate of existing posts
-          const isDuplicate = existingPosts.some(
-            (p) =>
-              (p.hook && p.hook.trim().toLowerCase() === sanitized.hook.trim().toLowerCase()) ||
-              (p.body && p.body.trim().toLowerCase() === sanitized.body.trim().toLowerCase())
-          );
-
-          if (!isDuplicate) {
-            return sanitized;
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`[AI Service] Attempting content generation with Gemini model "${modelName}"`);
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.7,
+              },
+            }),
+            signal: AbortSignal.timeout(15000),
           }
-          console.warn('[AI Service] AI generated content matched an existing post. Falling back to unique curated tech engine.');
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            const cleanedText = text
+              .replace(/^```json\s*/i, '')
+              .replace(/^```\s*/, '')
+              .replace(/\s*```$/, '')
+              .trim();
+
+            const parsed = JSON.parse(cleanedText);
+            const rawPayload: GeneratedContentPayload = {
+              hook: parsed.hook || `Key architectural lessons when working with ${topic}.`,
+              body: parsed.body || research.summary,
+              cta: parsed.cta || `What has been your experience with ${topic}? Let's discuss below!`,
+              hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
+                ? parsed.hashtags
+                : [`#${topic.replace(/\s+/g, '')}`, '#SoftwareEngineering', '#Coding'],
+            };
+
+            const sanitized = sanitizePostContent(rawPayload);
+
+            // Verify sanitized output is not a duplicate of existing posts
+            const isDuplicate = existingPosts.some(
+              (p) =>
+                (p.hook && p.hook.trim().toLowerCase() === sanitized.hook.trim().toLowerCase()) ||
+                (p.body && p.body.trim().toLowerCase() === sanitized.body.trim().toLowerCase())
+            );
+
+            if (!isDuplicate) {
+              console.log(`[AI Service] Successfully generated non-duplicate post using model "${modelName}"`);
+              return sanitized;
+            }
+            console.warn(`[AI Service] Content from model "${modelName}" matched an existing post. Trying next model...`);
+            continue;
+          }
         }
-      } else {
-        console.warn(`AI API returned status ${res.status}. Utilizing curated tech engine.`);
+
+        // Handle specific error codes
+        if (res.status === 401 || res.status === 403) {
+          console.error(`[AI Service] Authentication failed (HTTP ${res.status}). Check AI_API_KEY configuration.`);
+          break; // Stop attempting other models if the credential itself is unauthorized
+        } else if (res.status === 404) {
+          console.warn(`[AI Service] Model "${modelName}" returned HTTP 404 (Not Found / Deprecated). Trying next model...`);
+        } else if (res.status === 429) {
+          console.warn(`[AI Service] Model "${modelName}" returned HTTP 429 (Rate Limit / Quota Exceeded). Trying next model...`);
+        } else if (res.status === 500 || res.status === 503) {
+          console.warn(`[AI Service] Model "${modelName}" returned HTTP ${res.status} (High Demand / Server Error). Trying next model...`);
+        } else {
+          console.warn(`[AI Service] Model "${modelName}" returned HTTP ${res.status}. Trying next model...`);
+        }
+      } catch (err: any) {
+        const isTimeout = err?.name === 'TimeoutError' || err?.message?.includes('timeout') || err?.message?.includes('aborted');
+        if (isTimeout) {
+          console.warn(`[AI Service] Request to model "${modelName}" timed out after 15s. Trying next model...`);
+        } else {
+          console.warn(`[AI Service] Network error calling model "${modelName}": ${err?.message || err}. Trying next model...`);
+        }
       }
-    } catch (err) {
-      console.warn('AI API call exception, utilizing research-backed generator fallback:', err);
     }
+
+    console.warn('[AI Service] All candidate Gemini models failed or generated duplicates. Utilizing diverse curated tech engine.');
+  } else {
+    console.warn('[AI Service] AI_API_KEY is not configured. Utilizing diverse curated tech engine.');
   }
 
   return generateCuratedTechPost(topic, research, writingStyle, existingPosts);
@@ -306,13 +353,69 @@ export function generateCuratedTechPost(
     return sanitizePostContent(availableGlobal[templateIndex]);
   }
 
-  // 3. Fallback: Synthesize a completely unique post derived from the topic and research summary
-  const uniquePayload: GeneratedContentPayload = {
-    hook: `💡 Engineering perspective: Real-world architectural takeaways on "${topic}".`,
-    body: `${research.summary || `When architecting reliable systems around ${topic}, focus on decoupling dependencies, rigorous input validation, and comprehensive automated observability.`}\n\n3 key lessons:\n\n1. Design for resilience over complexity.\n2. Isolate failure domains early.\n3. Ground every implementation with automated regression testing.`,
-    cta: `What is your primary architectural principle when implementing ${topic}?`,
-    hashtags: [`#${topic.replace(/[^a-zA-Z0-9]/g, '')}`, '#SoftwareEngineering', '#SystemArchitecture', '#TechLead'],
+  // 3. Third attempt: Synthesize a varied, non-repeating technical post grounded in research
+  const baseSummary = research.summary?.trim() || `Architecting resilient, production-ready systems around ${topic} requires strict contract boundaries and automated validation.`;
+  const sanitizedTopicTag = topic.replace(/[^a-zA-Z0-9]/g, '');
+
+  const structuralAngles: Array<() => GeneratedContentPayload> = [
+    // Angle 1: System Design & Tradeoffs
+    () => ({
+      hook: `🏗️ System design perspective: Evaluating the architectural tradeoffs of "${topic}".`,
+      body: `${baseSummary}\n\n3 core engineering principles for scale:\n\n1. Decouple critical dependencies to prevent cascading downtime.\n2. Enforce strict type and payload validation across service boundaries.\n3. Implement exponential backoff with jitter on all network calls.`,
+      cta: `What architectural tradeoff have you found most challenging when working with ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#SystemDesign', '#SoftwareArchitecture', '#BackendDev'],
+    }),
+    // Angle 2: Production Lessons & Real-world Edge Cases
+    () => ({
+      hook: `🛠️ Production engineering: What real-world workloads teach us about "${topic}".`,
+      body: `Shipping features around ${topic} is straightforward in staging. Keeping them stable under production traffic requires deliberate defensive design.\n\nKey takeaways from the trenches:\n\n1. Instrument observability and distributed tracing early.\n2. Set deterministic upper bounds on timeouts and memory usage.\n3. Fail fast and degrade gracefully instead of blocking requests indefinitely.`,
+      cta: `What was your most unexpected production discovery when scaling ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#DevOps', '#SoftwareEngineering', '#SiteReliability'],
+    }),
+    // Angle 3: Engineering Craft & Clean Interfaces
+    () => ({
+      hook: `⚡ Engineering craft: 3 non-negotiable patterns for maintainable "${topic}".`,
+      body: `Clean code in the context of ${topic} isn't aesthetic—it's about keeping cognitive load manageable as your codebase grows.\n\n3 practical patterns to adopt:\n\n1. Prefer explicit interface contracts over implicit magic behavior.\n2. Isolate state transitions to single responsibility handlers.\n3. Keep unit tests focused on behavior rather than internal implementation details.`,
+      cta: `Which coding standard has saved your team the most debugging hours with ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#CleanCode', '#SoftwareEngineering', '#DeveloperExperience'],
+    }),
+    // Angle 4: Performance & Scalability
+    () => ({
+      hook: `🚀 Performance optimization: Identifying silent bottlenecks in "${topic}".`,
+      body: `High throughput systems around ${topic} are rarely choked by compute alone—I/O latency and resource contention are usually the culprits.\n\nWhere to look first:\n\n1. Minimize serialized network round-trips with batching or connection pooling.\n2. Cache stable read models close to the client or compute edge.\n3. Profile heap allocations and async event loop lag under synthetic load.`,
+      cta: `What is your highest-leverage performance optimization technique for ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#WebPerformance', '#SystemArchitecture', '#Scalability'],
+    }),
+    // Angle 5: Operational Resilience & Failure Isolation
+    () => ({
+      hook: `🛡️ Resilient engineering: Designing failure-tolerant boundaries around "${topic}".`,
+      body: `Every distributed dependency can and will fail. Designing around ${topic} means treating failure as an expected state.\n\n3 resilience patterns to implement:\n\n1. Circuit breakers that shed load before downstream services exhaust pools.\n2. Idempotency keys on state-mutating requests to ensure safe retries.\n3. Continuous automated health checking with graceful fallback paths.`,
+      cta: `How does your architecture handle unexpected downstream failures when integrating ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#Resilience', '#SoftwareEngineering', '#SystemDesign'],
+    }),
+    // Angle 6: Technical Leadership & Best Practices
+    () => ({
+      hook: `💡 Technical leadership: The architectural mindset shift needed for "${topic}".`,
+      body: `${baseSummary}\n\nSenior engineering insights:\n\n1. Choose boring, proven architecture for core data flows.\n2. Optimize for rapid rollback and automated verification over speculative features.\n3. Document architectural decision records (ADRs) so reasoning outlives the sprint.`,
+      cta: `What is the most valuable architectural principle your team applies to ${topic}?`,
+      hashtags: [`#${sanitizedTopicTag}`, '#EngineeringLeadership', '#SoftwareArchitecture', '#TechLead'],
+    }),
+  ];
+
+  for (const generateAngle of structuralAngles) {
+    const candidate = generateAngle();
+    if (!isDuplicateOfExisting(candidate)) {
+      return sanitizePostContent(candidate);
+    }
+  }
+
+  // Final guaranteed unique fallback if all standard angles exist
+  const uniqueFallback: GeneratedContentPayload = {
+    hook: `🔍 Deep dive: Practical engineering observations on "${topic}".`,
+    body: `${baseSummary}\n\n3 architectural pillars:\n\n1. Resilience: Decouple dependencies and automate circuit breaks.\n2. Maintainability: Strict contract validation at boundaries.\n3. Observability: Continuous metrics and distributed tracing.`,
+    cta: `What is your key priority when designing around ${topic}?`,
+    hashtags: [`#${sanitizedTopicTag}`, '#SoftwareEngineering', '#SystemArchitecture'],
   };
 
-  return sanitizePostContent(uniquePayload);
+  return sanitizePostContent(uniqueFallback);
 }

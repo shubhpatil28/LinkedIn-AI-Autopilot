@@ -65,33 +65,55 @@ export interface FullAutoUserResult {
  * Falls back to index 0 if cursor is missing or out of range.
  * Returns null if no enabled topics exist.
  */
-export async function selectNextTopic(
-  userId: string,
+/**
+ * Resolves the candidate topic at a given offset from current cursor without persisting.
+ */
+export function getCandidateTopic(
   settings: UserSettings,
-  allTopics: Topic[]
-): Promise<{ topic: Topic; newIndex: number } | null> {
+  allTopics: Topic[],
+  offset: number = 0
+): { topic: Topic; nextIndex: number } | null {
   const enabled = allTopics.filter((t) => t.enabled && t.name?.trim());
   if (enabled.length === 0) return null;
 
   const currentIndex =
     typeof settings.lastTopicIndex === 'number' ? settings.lastTopicIndex : 0;
 
-  // Clamp to valid range (handles newly disabled topics shrinking the list)
-  const safeIndex = currentIndex % enabled.length;
+  const safeIndex = (currentIndex + offset) % enabled.length;
   const selected = enabled[safeIndex];
   const nextIndex = (safeIndex + 1) % enabled.length;
 
-  // Persist the updated cursor (non-fatal if this fails)
+  return { topic: selected, nextIndex };
+}
+
+/**
+ * Persists the updated cursor index to Firestore ONLY after successful generation.
+ */
+export async function persistTopicCursor(userId: string, newIndex: number): Promise<void> {
   try {
     await adminDb.collection('settings').doc(userId).update({
-      lastTopicIndex: nextIndex,
+      lastTopicIndex: newIndex,
       updatedAt: new Date().toISOString(),
     });
+    console.log(`[AutoGen] Persisted lastTopicIndex=${newIndex} for user ${userId}`);
   } catch (err) {
     console.warn(`[AutoGen] Failed to persist lastTopicIndex for user ${userId}:`, err);
   }
+}
 
-  return { topic: selected, newIndex: nextIndex };
+/**
+ * Selects the next topic using a persistent round-robin rotation cursor.
+ * Backward-compatible wrapper that persists cursor when invoked directly.
+ */
+export async function selectNextTopic(
+  userId: string,
+  settings: UserSettings,
+  allTopics: Topic[]
+): Promise<{ topic: Topic; newIndex: number } | null> {
+  const candidate = getCandidateTopic(settings, allTopics, 0);
+  if (!candidate) return null;
+  await persistTopicCursor(userId, candidate.nextIndex);
+  return { topic: candidate.topic, newIndex: candidate.nextIndex };
 }
 
 // ---------------------------------------------------------------------------
@@ -417,43 +439,68 @@ export async function runFullAutoForUser(
     return { userId, status: 'skipped', errorReason: r };
   }
 
-  // Topic selection
+  // Topic candidate selection and generation with fallback rotation
   const allTopicsSnap = await adminDb.collection('topics').where('userId', '==', userId).get();
   const allTopics: Topic[] = [];
   allTopicsSnap.forEach((d) => allTopics.push(d.data() as Topic));
 
-  const topicSelection = await selectNextTopic(userId, settings, allTopics);
-  if (!topicSelection) {
+  const validEnabledTopics = allTopics.filter((t) => t.enabled && t.name?.trim());
+  if (validEnabledTopics.length === 0) {
     const r = 'No enabled topics available for selection.';
     console.warn(`${tag} SKIPPED - ${r}`);
     return { userId, status: 'skipped', errorReason: r };
   }
-  console.log(`${tag} Selected topic: "${topicSelection.topic.name}"`);
 
   // Fetch existing posts for duplicate detection
   const existingSnap = await adminDb.collection('content').where('userId', '==', userId).get();
   const existingPosts: ContentItem[] = [];
   existingSnap.forEach((d) => existingPosts.push(d.data() as ContentItem));
 
-  // Run generation pipeline
-  const generationResult = await generateAndPersistPost(
-    userId,
-    topicSelection.topic,
-    settings,
-    existingPosts,
-    slotUtc,
-    dryRun
-  );
+  // Try candidate topics sequentially (up to 3 attempts) if duplicate detected
+  const maxAttempts = Math.min(validEnabledTopics.length, 3);
+  let successfulResult: AutoGenerationResult | null = null;
+  let successfulNewIndex: number | null = null;
+  let successfulTopicName = '';
+  let lastFailureReason = 'Generation rejected';
 
-  if (!generationResult.generated) {
-    const r = generationResult.errorReason || generationResult.skippedReason || 'Generation failed';
-    console.error(`${tag} FAILED - ${r}`);
-    return { userId, status: 'failed', generationResult, errorReason: r };
+  for (let offset = 0; offset < maxAttempts; offset++) {
+    const candidate = getCandidateTopic(settings, allTopics, offset);
+    if (!candidate) break;
+
+    console.log(`${tag} Evaluating topic candidate #${offset + 1}/${maxAttempts}: "${candidate.topic.name}"`);
+    const genResult = await generateAndPersistPost(
+      userId,
+      candidate.topic,
+      settings,
+      existingPosts,
+      slotUtc,
+      dryRun
+    );
+
+    if (genResult.generated) {
+      successfulResult = genResult;
+      successfulNewIndex = candidate.nextIndex;
+      successfulTopicName = candidate.topic.name;
+      break;
+    } else {
+      lastFailureReason = genResult.errorReason || genResult.skippedReason || 'Generation rejected';
+      console.warn(`${tag} Topic "${candidate.topic.name}" was skipped/failed: ${lastFailureReason}. Retrying next topic...`);
+    }
+  }
+
+  if (!successfulResult || !successfulResult.generated) {
+    console.error(`${tag} FAILED after ${maxAttempts} candidate attempt(s) - ${lastFailureReason}. Cursor preserved at current index.`);
+    return { userId, status: 'failed', errorReason: lastFailureReason };
+  }
+
+  // Persist updated cursor ONLY upon confirmed generation success
+  if (successfulNewIndex !== null && !dryRun) {
+    await persistTopicCursor(userId, successfulNewIndex);
   }
 
   const modeLabel = dryRun ? ' [DRY-RUN]' : '';
   console.log(
-    `${tag}${modeLabel} GENERATED - topic="${topicSelection.topic.name}" postId=${generationResult.post?.id ?? 'dry-run'}`
+    `${tag}${modeLabel} GENERATED - topic="${successfulTopicName}" postId=${successfulResult.post?.id ?? 'dry-run'}`
   );
-  return { userId, status: 'generated', generationResult };
+  return { userId, status: 'generated', generationResult: successfulResult };
 }

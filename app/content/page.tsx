@@ -65,14 +65,51 @@ export default function ContentPage() {
       // Step 1: Topic Research
       const research = await performTopicResearch(selectedTopic);
 
-      // Step 2: AI Content Generation (with existing post duplicate awareness)
-      const postContent = await generateLinkedInPostContent(
-        selectedTopic,
-        research,
-        settings?.writingStyle || 'Professional & Technical',
-        settings?.language || 'English',
-        contentList
-      );
+      // Step 2: Server-Side AI Content Generation (uses server AI_API_KEY)
+      let postContent;
+      let finalResearch = research;
+
+      try {
+        const idToken = await user.getIdToken();
+        const genRes = await fetch('/api/content/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            topic: selectedTopic,
+            research,
+            writingStyle: settings?.writingStyle || 'Professional & Technical',
+            language: settings?.language || 'English',
+            existingPosts: contentList.map((p) => ({ hook: p.hook, body: p.body })),
+          }),
+        });
+
+        if (genRes.ok) {
+          const genData = await genRes.json();
+          if (genData.success && genData.post) {
+            postContent = genData.post;
+            if (genData.research) finalResearch = genData.research;
+          }
+        } else {
+          const errData = await genRes.json().catch(() => ({}));
+          console.warn('[ContentPage] Server generation returned non-ok status:', genRes.status, errData);
+        }
+      } catch (apiErr) {
+        console.warn('[ContentPage] Server generation API error, using resilient fallback:', apiErr);
+      }
+
+      // Resilient fallback if server API was unreachable
+      if (!postContent) {
+        postContent = await generateLinkedInPostContent(
+          selectedTopic,
+          research,
+          settings?.writingStyle || 'Professional & Technical',
+          settings?.language || 'English',
+          contentList
+        );
+      }
 
       // Step 3: Visual Generation
       const imageUrl = await generateTopicVisual(selectedTopic, postContent.hook, postContent.body);
@@ -98,7 +135,7 @@ export default function ContentPage() {
         cta: postContent.cta,
         hashtags: postContent.hashtags,
         imageUrl,
-        sourceUrls: research.sourceUrls,
+        sourceUrls: finalResearch.sourceUrls,
         status: initialStatus,
         scheduledAt: scheduledAtISO,
         publishedAt: null,
