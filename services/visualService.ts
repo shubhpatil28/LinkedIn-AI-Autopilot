@@ -1,18 +1,18 @@
 /**
- * Premium AI Visual Generation Engine 2.0
+ * Visual Generation Engine 3.0
  * Produces 1200x630 topic-aware, high-contrast, visually distinctive graphics using pure SVG.
  * Strictly avoids foreignObject for 100% reliable resvg/PNG conversion.
  * 
- * Supports 6 distinct visual styles:
- *  - premium_3d: Realistic 3D glassmorphism, depth, reflections, and cinematic lighting.
- *  - modern_editorial: Minimalist high-contrast typography, large headlines, architectural axioms.
- *  - isometric_tech: 3D isometric architecture diagrams with multi-tiered servers & data flows.
- *  - futuristic_ai: Neural network clusters, AI brains, intelligent agent orbits, and HUD rings.
- *  - code_developer: Realistic IDE workstations, syntax-highlighted code panels, and speed metrics.
- *  - data_visualization: Clean KPI dashboards, hero metrics, and architectural comparison charts.
+ * Features Visual Engine 3.0:
+ *  - Enforces strict typography hierarchy: 44px headlines, >= 14px minimum readable labels.
+ *  - Dynamic text measurement (estimateTextWidth) and line wrapping (wrapTextToWidth).
+ *  - Eliminates fabricated metrics (no arbitrary percentages or fake latency numbers).
+ *  - Automated visual quality validation (AABB collision detection, canvas bounds checking).
+ *  - 6 Content-Aware Visual Compositions across 8 technical topic domains.
  */
 
 import { VisualStyle } from '@/types';
+import { estimateTextWidth, validateVisualQuality } from './visualValidationService';
 
 export interface VisualNode {
   step: string;
@@ -64,9 +64,17 @@ export function escapeXml(unsafe: string): string {
 }
 
 /**
- * Splits text into wrapped lines for pure SVG text rendering without foreignObject.
+ * Splits text into wrapped lines bounded by pixel width rather than character count,
+ * guaranteeing zero container overflow.
  */
-export function wrapText(text: string, maxCharsPerLine: number = 50, maxLines: number = 2): string[] {
+export function wrapTextToWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  maxLines: number = 2,
+  isMonospace: boolean = false
+): string[] {
+  if (!text) return [''];
   const clean = text.replace(/^[^\w\s"']+/g, '').trim();
   const words = clean.split(/\s+/);
   const lines: string[] = [];
@@ -75,8 +83,9 @@ export function wrapText(text: string, maxCharsPerLine: number = 50, maxLines: n
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     const candidate = currentLine ? `${currentLine} ${word}` : word;
+    const candidateWidth = estimateTextWidth(candidate, fontSize, isMonospace);
 
-    if (candidate.length <= maxCharsPerLine) {
+    if (candidateWidth <= maxWidth) {
       currentLine = candidate;
     } else {
       if (currentLine) {
@@ -85,8 +94,9 @@ export function wrapText(text: string, maxCharsPerLine: number = 50, maxLines: n
       if (lines.length === maxLines - 1) {
         let lastLine = word;
         for (let j = i + 1; j < words.length; j++) {
-          if ((lastLine + ' ' + words[j]).length <= maxCharsPerLine - 3) {
-            lastLine += ' ' + words[j];
+          const nextCandidate = `${lastLine} ${words[j]}`;
+          if (estimateTextWidth(nextCandidate + '...', fontSize, isMonospace) <= maxWidth) {
+            lastLine = nextCandidate;
           } else {
             lastLine += '...';
             break;
@@ -103,7 +113,14 @@ export function wrapText(text: string, maxCharsPerLine: number = 50, maxLines: n
     lines.push(currentLine);
   }
 
-  return lines.length > 0 ? lines : ['Engineering Architecture'];
+  return lines.length > 0 ? lines : [clean.substring(0, 30)];
+}
+
+/**
+ * Backward-compatible character-based wrapper calling wrapTextToWidth
+ */
+export function wrapText(text: string, maxCharsPerLine: number = 46, maxLines: number = 2): string[] {
+  return wrapTextToWidth(text, maxCharsPerLine * 22, 44, maxLines);
 }
 
 /**
@@ -225,9 +242,9 @@ export function determineVisualConfig(
         accentColor: '#38BDF8',
         secondaryColor: '#818CF8',
         metrics: [
-          { value: '75%', label: 'Cost Reduction', subtext: 'via Semantic Caching', color: '#38BDF8' },
-          { value: '< 18ms', label: 'Vector Index P99', subtext: 'HNSW Graph Search', color: '#818CF8' },
-          { value: '99.4%', label: 'Retrieval Recall', subtext: 'Hybrid Dense + BM25', color: '#34D399' },
+          { value: 'STAGE 01', label: 'Semantic Caching', subtext: 'Exact & Dense Embedding Cache', color: '#38BDF8' },
+          { value: 'STAGE 02', label: 'HNSW Vector Index', subtext: 'Hierarchical Navigable Graph', color: '#818CF8' },
+          { value: 'STAGE 03', label: 'Hybrid Reranker', subtext: 'Cross-Encoder Reciprocal Rank', color: '#34D399' },
         ],
         takeaways: [
           'Semantic caching prevents redundant expensive LLM calls',
@@ -256,7 +273,7 @@ export function determineVisualConfig(
       ],
       takeaways: [
         'Deterministic bounds beat prompt tweaking for production reliability',
-        'Tiered model routing saves 60% on routine agent steps',
+        'Tiered model routing saves compute on routine agent steps',
         'Automated golden evaluation datasets catch silent model drift',
       ],
     };
@@ -307,7 +324,7 @@ export function determineVisualConfig(
         { step: '01', title: 'Server Component', subtitle: 'Zero Client Bundle JS', color: '#38BDF8', iconType: 'brain' },
         { step: '02', title: 'Server Action', subtitle: 'Type-Safe Direct RPC', color: '#818CF8', iconType: 'tool' },
         { step: '03', title: 'Data Mutation', subtitle: 'ACID DB Operations', color: '#C084FC', iconType: 'db' },
-        { step: '04', title: 'Optimistic UI', subtitle: 'Instant 0ms Feedback', color: '#34D399', iconType: 'check' },
+        { step: '04', title: 'Optimistic UI', subtitle: 'Instant Client Feedback', color: '#34D399', iconType: 'check' },
       ],
       takeaways: [
         'React Compiler auto-memoizes render passes without manual useMemo',
@@ -397,9 +414,9 @@ export function determineVisualConfig(
         { step: '04', title: 'Response Cache', subtitle: '24h Deduplication TTL', color: '#34D399', iconType: 'check' },
       ],
       metrics: [
-        { value: '100%', label: 'Idempotency Rate', subtext: 'Zero Double-Charges', color: '#38BDF8' },
-        { value: '< 4ms', label: 'Redis Mutex TTL', subtext: 'Distributed Lock P99', color: '#818CF8' },
-        { value: '99.999%', label: 'Transaction ACID', subtext: 'PostgreSQL WAL Replicas', color: '#34D399' },
+        { value: 'MUTEX', label: 'Distributed Lock', subtext: 'Redis Redlock Lease Mutex', color: '#38BDF8' },
+        { value: 'IDEMPOTENT', label: 'Request Deduplication', subtext: '24h Idempotency Cache TTL', color: '#818CF8' },
+        { value: 'ISOLATION', label: 'Serializable Isolation', subtext: 'PostgreSQL WAL Replicas', color: '#34D399' },
       ],
       takeaways: [
         'Client-provided idempotency keys prevent duplicate billing on retries',
@@ -409,7 +426,7 @@ export function determineVisualConfig(
     };
   }
 
-  // 7. DevOps, Docker & Kubernetes
+  // 8. DevOps, Docker & Kubernetes
   if (normTopic.includes('devops') || normTopic.includes('docker') || normTopic.includes('kubernetes') || normTopic.includes('cloud') || normTopic.includes('ci')) {
     return {
       badge: 'AUTOMATION & CI/CD RELEASE PIPELINES',
@@ -434,7 +451,7 @@ export function determineVisualConfig(
     };
   }
 
-  // 8. Cybersecurity & Zero Trust
+  // 9. Cybersecurity & Zero Trust
   if (normTopic.includes('security') || normTopic.includes('cyber') || normTopic.includes('auth') || textContent.includes('zero-trust')) {
     return {
       badge: 'CYBERSECURITY & ZERO-TRUST DEFENSE',
@@ -459,7 +476,7 @@ export function determineVisualConfig(
     };
   }
 
-  // 9. Engineering Leadership & Career
+  // 10. Engineering Leadership & Career
   if (normTopic.includes('engineering') || normTopic.includes('career') || normTopic.includes('team') || normTopic.includes('lead')) {
     return {
       badge: 'ENGINEERING EXCELLENCE & ARCHITECTURAL AXIOMS',
@@ -573,7 +590,7 @@ function createConfigForExplicitStyle(
         ],
         takeaways: [
           'Deterministic bounds beat prompt tweaking for reliability',
-          'Tiered routing saves up to 60% of LLM inference spend',
+          'Tiered routing saves compute on routine agent steps',
           'Continuous evaluation catches prompt degradation early',
         ],
       };
@@ -593,7 +610,7 @@ function createConfigForExplicitStyle(
           { code: '  execute(payload: T): Promise<Result>;', comment: '// Async execution' },
           { code: '}', comment: '' },
           { code: 'export const handler = createRoute({', comment: '' },
-          { code: '  timeout: 5000, retry: 3', comment: '// Resilient SLA bounds' },
+          { code: '  timeout: 5000, retry: 3', comment: '// Resilient bounds' },
           { code: '});', comment: '' },
         ],
         takeaways: [
@@ -613,14 +630,14 @@ function createConfigForExplicitStyle(
         accentColor: '#38BDF8',
         secondaryColor: '#34D399',
         metrics: [
-          { value: '99.99%', label: 'Availability SLA', subtext: 'Global Anycast Edge', color: '#38BDF8' },
-          { value: '< 12ms', label: 'P99 Response Time', subtext: 'Sub-second UX', color: '#818CF8' },
-          { value: '10x', label: 'Scale Factor', subtext: 'Peak Concurrency', color: '#34D399' },
+          { value: 'EDGE', label: 'Anycast Ingress', subtext: 'Global Anycast Edge Gateway', color: '#38BDF8' },
+          { value: 'MESH', label: 'Stateless Service Fleet', subtext: 'Decoupled Worker Routing', color: '#818CF8' },
+          { value: 'STORAGE', label: 'Replicated Persistence', subtext: 'Multi-Region WAL Consensus', color: '#34D399' },
         ],
         takeaways: [
-          'Distributed caching reduces database read load by 85%',
+          'Distributed caching reduces database read load dramatically',
           'Connection pooling prevents socket exhaustion under traffic spikes',
-          'Active health checks isolate degraded instances in milliseconds',
+          'Active health checks isolate degraded instances seamlessly',
         ],
       };
     case 'premium_3d':
@@ -651,8 +668,8 @@ function createConfigForExplicitStyle(
 
 /**
  * STYLE A: PREMIUM 3D RENDER
- * Realistic 3D glassmorphic cards, isometric cubes, depth gradients, specular highlights,
- * and cinematic lighting.
+ * Realistic 3D glassmorphic cards, depth gradients, specular highlights,
+ * and high-contrast vertical principles (strictly zero horizontal overlap).
  */
 function renderPremium3DRender(config: VisualConfig): string {
   const nodes = config.nodes || [
@@ -666,7 +683,7 @@ function renderPremium3DRender(config: VisualConfig): string {
   const nodeGap = 26;
   const startX = 70;
   const nodeY = 195;
-  const nodeHeight = 145;
+  const nodeHeight = 150;
 
   const cardsSvg = nodes.map((node, i) => {
     const x = startX + i * (nodeWidth + nodeGap);
@@ -693,30 +710,36 @@ function renderPremium3DRender(config: VisualConfig): string {
         <rect x="${x}" y="${nodeY}" width="${nodeWidth}" height="4" rx="2" fill="${node.color}"/>
         
         <!-- 3D Floating Step Pill -->
-        <rect x="${x + 16}" y="${nodeY + 16}" width="${64}" height="24" rx="12" fill="#030712" stroke="${node.color}" stroke-width="1.2"/>
-        <text x="${x + 48}" y="${nodeY + 32}" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="${node.color}" text-anchor="middle" letter-spacing="1">STEP ${node.step}</text>
+        <rect x="${x + 16}" y="${nodeY + 16}" width="76" height="26" rx="13" fill="#030712" stroke="${node.color}" stroke-width="1.2"/>
+        <text x="${x + 54}" y="${nodeY + 34}" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${node.color}" text-anchor="middle" letter-spacing="1">STEP ${node.step}</text>
         
         <!-- Icon -->
         ${renderSvgIcon(node.iconType || 'tool', x + nodeWidth - 38, nodeY + 16, node.color)}
         
         <!-- Title & Subtitle -->
-        <text x="${x + 16}" y="${nodeY + 70}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">${escapeXml(node.title)}</text>
-        <text x="${x + 16}" y="${nodeY + 92}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">${escapeXml(node.subtitle || '')}</text>
+        <text x="${x + 16}" y="${nodeY + 74}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">${escapeXml(node.title)}</text>
+        <text x="${x + 16}" y="${nodeY + 98}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(node.subtitle || '')}</text>
         
         <!-- Bottom Divider & Verification Pill -->
-        <line x1="${x + 16}" y1="${nodeY + 112}" x2="${x + nodeWidth - 16}" y2="${nodeY + 112}" stroke="#1E2B4D" stroke-width="1"/>
-        <circle cx="${x + 24}" cy="${nodeY + 128}" r="3.5" fill="${node.color}"/>
-        <text x="${x + 36}" y="${nodeY + 132}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#CBD5E1">Production Hardened</text>
+        <line x1="${x + 16}" y1="${nodeY + 116}" x2="${x + nodeWidth - 16}" y2="${nodeY + 116}" stroke="#1E2B4D" stroke-width="1"/>
+        <circle cx="${x + 24}" cy="${nodeY + 132}" r="4" fill="${node.color}"/>
+        <text x="${x + 36}" y="${nodeY + 137}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#CBD5E1">Production Hardened</text>
       </g>
       ${arrowSvg}
     `;
   }).join('\n');
 
-  const takeaways = config.takeaways || [];
-  const takeawaySvg = takeaways.map((t, idx) => `
+  const takeaways = config.takeaways || [
+    'Layered architecture isolates state mutations from presentation',
+    'Idempotent operations guarantee safe execution retries',
+    'Automated observability telemetry guarantees 24/7 visibility',
+  ];
+
+  // Vertically stacked takeaway rows to eliminate horizontal text collisions completely
+  const takeawaySvg = takeaways.slice(0, 3).map((t, idx) => `
     <g>
-      <circle cx="${95 + idx * 350}" cy="425" r="4.5" fill="${config.accentColor}"/>
-      <text x="${112 + idx * 350}" y="429" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#E2E8F0">${escapeXml(t)}</text>
+      <circle cx="102" cy="${435 + idx * 36}" r="4.5" fill="${config.accentColor}"/>
+      <text x="120" y="${440 + idx * 36}" font-family="Inter, sans-serif" font-size="15" font-weight="600" fill="#E2E8F0">${escapeXml(t)}</text>
     </g>
   `).join('\n');
 
@@ -724,11 +747,11 @@ function renderPremium3DRender(config: VisualConfig): string {
     ${cardsSvg}
 
     <!-- 3D Takeaway Banner Container -->
-    <rect x="74" y="381" width="1056" height="110" rx="14" fill="#000000" opacity="0.4"/>
-    <rect x="70" y="375" width="1060" height="115" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
-    <path d="M 84 376 L 1116 376" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
+    <rect x="74" y="375" width="1056" height="165" rx="14" fill="#000000" opacity="0.4"/>
+    <rect x="70" y="370" width="1060" height="170" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
+    <path d="M 84 371 L 1116 371" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
     
-    <text x="95" y="402" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">3D ARCHITECTURAL TAKEAWAYS</text>
+    <text x="95" y="402" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">3D ARCHITECTURAL TAKEAWAYS</text>
     ${takeawaySvg}
   `;
 }
@@ -736,7 +759,7 @@ function renderPremium3DRender(config: VisualConfig): string {
 /**
  * STYLE B: MODERN EDITORIAL
  * Minimalist high-contrast typography, large headlines, architectural axioms,
- * and clean asymmetric hierarchy.
+ * and clean asymmetric hierarchy with safely wrapped typography.
  */
 function renderModernEditorial(config: VisualConfig): string {
   const quote = config.editorialQuote?.quote || 'Simplicity in system design creates operational resilience at scale.';
@@ -747,15 +770,25 @@ function renderModernEditorial(config: VisualConfig): string {
     'Boring, battle-tested technology compounds reliability over time',
   ];
 
-  const takeawayRowsSvg = takeaways.map((t, idx) => {
-    const y = 205 + idx * 88;
+  const quoteLines = wrapTextToWidth(quote, 440, 24, 2);
+  const quoteSvg = quoteLines.map((line, i) => `
+    <text x="96" y="${280 + i * 36}" font-family="Inter, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">${i === 0 ? '“' : ''}${escapeXml(line)}${i === quoteLines.length - 1 ? '”' : ''}</text>
+  `).join('\n');
+
+  const takeawayRowsSvg = takeaways.slice(0, 3).map((t, idx) => {
+    const y = 195 + idx * 115;
+    const tLines = wrapTextToWidth(t, 420, 14, 2);
+    const tTextSvg = tLines.map((line, li) => `
+      <text x="700" y="${y + 58 + li * 22}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(line)}</text>
+    `).join('\n');
+
     return `
       <!-- Editorial Principle ${idx + 1} -->
       <g>
-        <rect x="620" y="${y}" width="510" height="74" rx="10" fill="#0D1322" stroke="#1F293D" stroke-width="1.5"/>
-        <text x="645" y="${y + 36}" font-family="Inter, sans-serif" font-size="22" font-weight="900" fill="${config.accentColor}">0${idx + 1}.</text>
-        <text x="700" y="${y + 35}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Principle 0${idx + 1}</text>
-        <text x="700" y="${y + 55}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">${escapeXml(t)}</text>
+        <rect x="610" y="${y}" width="520" height="98" rx="12" fill="#0D1322" stroke="#1F293D" stroke-width="1.5"/>
+        <text x="636" y="${y + 44}" font-family="Inter, sans-serif" font-size="26" font-weight="900" fill="${config.accentColor}">0${idx + 1}.</text>
+        <text x="700" y="${y + 34}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Principle 0${idx + 1}</text>
+        ${tTextSvg}
       </g>
     `;
   }).join('\n');
@@ -763,22 +796,22 @@ function renderModernEditorial(config: VisualConfig): string {
   return `
     <!-- Left Hero Column: Editorial Statement -->
     <g>
-      <rect x="70" y="195" width="520" height="280" rx="14" fill="#0A0F1D" stroke="#1E2738" stroke-width="1.8"/>
-      <rect x="70" y="195" width="6" height="280" rx="3" fill="${config.accentColor}"/>
+      <rect x="70" y="195" width="510" height="340" rx="14" fill="#0A0F1D" stroke="#1E2738" stroke-width="1.8"/>
+      <rect x="70" y="195" width="6" height="340" rx="3" fill="${config.accentColor}"/>
       
       <!-- Axiom Category -->
-      <text x="100" y="235" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">${escapeXml(axiom)}</text>
+      <text x="96" y="238" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">${escapeXml(axiom)}</text>
       
       <!-- Big Pull Quote -->
-      <text x="100" y="278" font-family="Inter, sans-serif" font-size="26" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">"${escapeXml(quote)}"</text>
+      ${quoteSvg}
       
       <!-- Editorial Divider -->
-      <line x1="100" y1="365" x2="550" y2="365" stroke="#1F293D" stroke-width="1"/>
+      <line x1="96" y1="375" x2="540" y2="375" stroke="#1F293D" stroke-width="1"/>
       
       <!-- Author / Metadata Footnote -->
-      <circle cx="106" cy="405" r="4" fill="${config.accentColor}"/>
-      <text x="120" y="409" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#E2E8F0">Verified Production Strategy</text>
-      <text x="120" y="432" font-family="Inter, sans-serif" font-size="11" fill="#64748B">Engineered for long-term reliability and zero maintenance overhead.</text>
+      <circle cx="104" cy="415" r="4.5" fill="${config.accentColor}"/>
+      <text x="120" y="420" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#E2E8F0">Verified Production Strategy</text>
+      <text x="120" y="450" font-family="Inter, sans-serif" font-size="14" fill="#64748B">Engineered for long-term operational resilience and zero maintenance.</text>
     </g>
 
     <!-- Right Column: 3 Structured Takeaways -->
@@ -790,11 +823,7 @@ function renderModernEditorial(config: VisualConfig): string {
  * STYLE C: ISOMETRIC TECHNICAL ILLUSTRATION
  * 3D isometric architecture diagrams with multi-tiered servers, databases, and connected data flows.
  */
-function renderIsometricTech(config: VisualConfig): string {
-  // Center 3D Isometric Infrastructure Stack:
-  // Tier 1 (Client/Ingress): Left (x: 180, y: 320)
-  // Tier 2 (Service Mesh Cluster): Center (x: 520, y: 280)
-  // Tier 3 (Distributed Database): Right (x: 880, y: 320)
+function renderIsometricTech(_config: VisualConfig): string {
   return `
     <!-- Isometric Perspective Grid Background -->
     <g opacity="0.25">
@@ -819,40 +848,40 @@ function renderIsometricTech(config: VisualConfig): string {
       <!-- Glowing Ingress Badge -->
       <circle cx="260" cy="330" r="16" fill="#030712" stroke="#38BDF8" stroke-width="2"/>
       ${renderSvgIcon('network', 248, 318, '#38BDF8')}
-      <text x="260" y="215" font-family="Inter, sans-serif" font-size="15" font-weight="800" fill="#F8FAFC" text-anchor="middle">Edge Gateway</text>
-      <text x="260" y="235" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#38BDF8" text-anchor="middle">Anycast CDN / WAF</text>
+      <text x="260" y="215" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Edge Gateway</text>
+      <text x="260" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#38BDF8" text-anchor="middle">Anycast CDN / WAF</text>
     </g>
 
     <!-- Isometric Data Beam 1 -> 2 -->
     <path d="M 400 330 L 520 280" stroke="#38BDF8" stroke-width="3" stroke-dasharray="6 3"/>
     <polygon points="516,276 528,277 521,286" fill="#38BDF8"/>
-    <rect x="430" y="285" width="60" height="18" rx="9" fill="#030712" stroke="#38BDF8" stroke-width="1"/>
-    <text x="460" y="298" font-family="Inter, sans-serif" font-size="10" font-weight="700" fill="#38BDF8" text-anchor="middle">&lt; 4ms</text>
+    <rect x="420" y="274" width="85" height="26" rx="13" fill="#030712" stroke="#38BDF8" stroke-width="1.2"/>
+    <text x="462" y="292" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" text-anchor="middle">Edge RPC</text>
 
     <!-- TIER 2: 3D ISOMETRIC MICROSERVICE CLUSTER -->
     <g>
       <!-- Base Shadow -->
-      <polygon points="460,350 600,270 740,350 600,430" fill="#000000" opacity="0.45"/>
+      <polygon points="460,370 600,290 740,370 600,450" fill="#000000" opacity="0.45"/>
       
       <!-- Left Face -->
-      <polygon points="460,290 600,370 600,430 460,350" fill="#4338CA" stroke="#818CF8" stroke-width="1.2"/>
+      <polygon points="460,320 600,400 600,450 460,370" fill="#4338CA" stroke="#818CF8" stroke-width="1.2"/>
       <!-- Right Face -->
-      <polygon points="600,370 740,290 740,350 600,430" fill="#4F46E5" stroke="#818CF8" stroke-width="1.2"/>
+      <polygon points="600,400 740,320 740,370 600,450" fill="#4F46E5" stroke="#818CF8" stroke-width="1.2"/>
       <!-- Top Face -->
-      <polygon points="600,210 740,290 600,370 460,290" fill="#6366F1" stroke="#A5B4FC" stroke-width="1.8"/>
+      <polygon points="600,240 740,320 600,400 460,320" fill="#6366F1" stroke="#A5B4FC" stroke-width="1.8"/>
       
       <!-- Glowing Cluster Badge -->
-      <circle cx="600" cy="290" r="16" fill="#030712" stroke="#818CF8" stroke-width="2"/>
-      ${renderSvgIcon('cloud', 588, 278, '#818CF8')}
-      <text x="600" y="175" font-family="Inter, sans-serif" font-size="15" font-weight="800" fill="#F8FAFC" text-anchor="middle">Microservice Mesh</text>
-      <text x="600" y="195" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#818CF8" text-anchor="middle">Autoscaling Fleet</text>
+      <circle cx="600" cy="320" r="16" fill="#030712" stroke="#818CF8" stroke-width="2"/>
+      ${renderSvgIcon('cloud', 588, 308, '#818CF8')}
+      <text x="600" y="215" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Microservice Mesh</text>
+      <text x="600" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#818CF8" text-anchor="middle">Autoscaling Fleet</text>
     </g>
 
     <!-- Isometric Data Beam 2 -> 3 -->
-    <path d="M 740 290 L 860 330" stroke="#34D399" stroke-width="3" stroke-dasharray="6 3"/>
-    <polygon points="852,324 866,332 856,336" fill="#34D399"/>
-    <rect x="770" y="285" width="60" height="18" rx="9" fill="#030712" stroke="#34D399" stroke-width="1"/>
-    <text x="800" y="298" font-family="Inter, sans-serif" font-size="10" font-weight="700" fill="#34D399" text-anchor="middle">ACID WAL</text>
+    <path d="M 740 320 L 880 340" stroke="#34D399" stroke-width="3" stroke-dasharray="6 3"/>
+    <polygon points="872,336 882,340 872,344" fill="#34D399"/>
+    <rect x="765" y="274" width="90" height="26" rx="13" fill="#030712" stroke="#34D399" stroke-width="1.2"/>
+    <text x="810" y="292" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" text-anchor="middle">ACID Sync</text>
 
     <!-- TIER 3: 3D ISOMETRIC SHARDED DATABASE -->
     <g>
@@ -869,23 +898,23 @@ function renderIsometricTech(config: VisualConfig): string {
       <!-- Glowing DB Badge -->
       <circle cx="980" cy="340" r="16" fill="#030712" stroke="#34D399" stroke-width="2"/>
       ${renderSvgIcon('db', 968, 328, '#34D399')}
-      <text x="980" y="260" font-family="Inter, sans-serif" font-size="15" font-weight="800" fill="#F8FAFC" text-anchor="middle">Distributed Database</text>
-      <text x="980" y="280" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#34D399" text-anchor="middle">Multi-Region Replicas</text>
+      <text x="980" y="255" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Distributed Database</text>
+      <text x="980" y="280" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#34D399" text-anchor="middle">Multi-Region Replicas</text>
     </g>
 
     <!-- Bottom Architectural Metric Cards -->
     <g>
-      <rect x="70" y="475" width="330" height="70" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
-      <text x="90" y="502" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#38BDF8" letter-spacing="1">LATENCY SLA</text>
-      <text x="90" y="526" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">&lt; 8ms P99 Edge to Core</text>
+      <rect x="70" y="465" width="330" height="78" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
+      <text x="92" y="494" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#38BDF8" letter-spacing="1">ROUTING ARCHITECTURE</text>
+      <text x="92" y="522" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Global Anycast Edge Ingress</text>
 
-      <rect x="435" y="475" width="330" height="70" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
-      <text x="455" y="502" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#818CF8" letter-spacing="1">ISOLATION</text>
-      <text x="455" y="526" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Stateless Container Fleet</text>
+      <rect x="435" y="465" width="330" height="78" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
+      <text x="457" y="494" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#818CF8" letter-spacing="1">ISOLATION</text>
+      <text x="457" y="522" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Stateless Container Fleet</text>
 
-      <rect x="800" y="475" width="330" height="70" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
-      <text x="820" y="502" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#34D399" letter-spacing="1">DURABILITY</text>
-      <text x="820" y="526" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">99.999999999% Durability</text>
+      <rect x="800" y="465" width="330" height="78" rx="10" fill="#091124" stroke="#1E2B4D" stroke-width="1.5"/>
+      <text x="822" y="494" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#34D399" letter-spacing="1">PERSISTENCE</text>
+      <text x="822" y="522" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Raft Consensus Replicas</text>
     </g>
   `;
 }
@@ -895,97 +924,91 @@ function renderIsometricTech(config: VisualConfig): string {
  * Neural network clusters, central intelligent agent orchestrator core,
  * synapsing paths, and holographic HUD gauges.
  */
-function renderFuturisticAI(config: VisualConfig): string {
-  // Center Neural Orchestrator Core at (600, 310)
-  // Orbiting Agent Nodes:
-  // Node 1: Top-Left (240, 240) - ReAct Planner
-  // Node 2: Top-Right (960, 240) - Tool Sandbox
-  // Node 3: Bottom-Left (240, 420) - Safety Guardrail
-  // Node 4: Bottom-Right (960, 420) - Audit Memory
+function renderFuturisticAI(_config: VisualConfig): string {
   return `
     <!-- Neural Network Synapse Lines -->
     <g>
       <!-- Center Core to Node 1 -->
-      <line x1="600" y1="310" x2="260" y2="240" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="5 3"/>
+      <line x1="600" y1="305" x2="260" y2="240" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="5 3"/>
       <!-- Center Core to Node 2 -->
-      <line x1="600" y1="310" x2="940" y2="240" stroke="#818CF8" stroke-width="2.5" stroke-dasharray="5 3"/>
+      <line x1="600" y1="305" x2="940" y2="240" stroke="#818CF8" stroke-width="2.5" stroke-dasharray="5 3"/>
       <!-- Center Core to Node 3 -->
-      <line x1="600" y1="310" x2="260" y2="420" stroke="#EF4444" stroke-width="2.5" stroke-dasharray="5 3"/>
+      <line x1="600" y1="305" x2="260" y2="380" stroke="#EF4444" stroke-width="2.5" stroke-dasharray="5 3"/>
       <!-- Center Core to Node 4 -->
-      <line x1="600" y1="310" x2="940" y2="420" stroke="#34D399" stroke-width="2.5" stroke-dasharray="5 3"/>
+      <line x1="600" y1="305" x2="940" y2="380" stroke="#34D399" stroke-width="2.5" stroke-dasharray="5 3"/>
       
       <!-- Inter-Agent Cross Connections -->
-      <line x1="260" y1="240" x2="260" y2="420" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
-      <line x1="940" y1="240" x2="940" y2="420" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <line x1="260" y1="240" x2="260" y2="380" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <line x1="940" y1="240" x2="940" y2="380" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
     </g>
 
     <!-- CENTER NEURAL ORCHESTRATION CORE -->
     <g>
       <!-- Outer HUD Ring 1 -->
-      <circle cx="600" cy="310" r="95" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 8" opacity="0.4"/>
+      <circle cx="600" cy="305" r="95" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 8" opacity="0.4"/>
       <!-- Outer HUD Ring 2 -->
-      <circle cx="600" cy="310" r="75" fill="none" stroke="#818CF8" stroke-width="2" stroke-dasharray="30 15" opacity="0.6"/>
+      <circle cx="600" cy="305" r="75" fill="none" stroke="#818CF8" stroke-width="2" stroke-dasharray="30 15" opacity="0.6"/>
       <!-- Inner Pulse Core -->
-      <circle cx="600" cy="310" r="55" fill="#070C1E" stroke="#38BDF8" stroke-width="2.5"/>
-      <circle cx="600" cy="310" r="30" fill="#0C1B3A" stroke="#818CF8" stroke-width="1.5"/>
-      ${renderSvgIcon('brain', 588, 298, '#38BDF8')}
+      <circle cx="600" cy="305" r="55" fill="#070C1E" stroke="#38BDF8" stroke-width="2.5"/>
+      <circle cx="600" cy="305" r="30" fill="#0C1B3A" stroke="#818CF8" stroke-width="1.5"/>
+      ${renderSvgIcon('brain', 588, 293, '#38BDF8')}
       
       <!-- Center Core Labels -->
-      <text x="600" y="425" font-family="Inter, sans-serif" font-size="14" font-weight="900" fill="#F8FAFC" text-anchor="middle" letter-spacing="1">AI ORCHESTRATOR</text>
-      <text x="600" y="445" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#38BDF8" text-anchor="middle">ReAct Autonomous Loop</text>
+      <text x="600" y="415" font-family="Inter, sans-serif" font-size="16" font-weight="900" fill="#F8FAFC" text-anchor="middle" letter-spacing="1">AI ORCHESTRATOR</text>
+      <text x="600" y="438" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#38BDF8" text-anchor="middle">ReAct Autonomous Loop</text>
     </g>
 
     <!-- ORBITING NODE 1: PLANNER -->
     <g>
-      <rect x="110" y="200" width="230" height="85" rx="12" fill="#080E24" stroke="#38BDF8" stroke-width="1.8"/>
-      <rect x="110" y="200" width="230" height="4" rx="2" fill="#38BDF8"/>
-      ${renderSvgIcon('user', 126, 218, '#38BDF8')}
-      <text x="160" y="230" font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#38BDF8" letter-spacing="1">REASONING</text>
-      <text x="160" y="248" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Goal Planner</text>
-      <text x="126" y="272" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Task decomposition &amp; context</text>
+      <rect x="80" y="195" width="240" height="92" rx="12" fill="#080E24" stroke="#38BDF8" stroke-width="1.8"/>
+      <rect x="80" y="195" width="240" height="4" rx="2" fill="#38BDF8"/>
+      ${renderSvgIcon('user', 96, 212, '#38BDF8')}
+      <text x="130" y="222" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#38BDF8" letter-spacing="1">REASONING</text>
+      <text x="130" y="246" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Goal Planner</text>
+      <text x="96" y="272" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Task decomposition &amp; context</text>
     </g>
 
     <!-- ORBITING NODE 2: TOOL SANDBOX -->
     <g>
-      <rect x="860" y="200" width="230" height="85" rx="12" fill="#080E24" stroke="#818CF8" stroke-width="1.8"/>
-      <rect x="860" y="200" width="230" height="4" rx="2" fill="#818CF8"/>
-      ${renderSvgIcon('tool', 876, 218, '#818CF8')}
-      <text x="910" y="230" font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#818CF8" letter-spacing="1">EXECUTION</text>
-      <text x="910" y="248" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Tool Dispatcher</text>
-      <text x="876" y="272" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Sandboxed API &amp; DB calls</text>
+      <rect x="880" y="195" width="240" height="92" rx="12" fill="#080E24" stroke="#818CF8" stroke-width="1.8"/>
+      <rect x="880" y="195" width="240" height="4" rx="2" fill="#818CF8"/>
+      ${renderSvgIcon('tool', 896, 212, '#818CF8')}
+      <text x="930" y="222" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#818CF8" letter-spacing="1">EXECUTION</text>
+      <text x="930" y="246" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Tool Dispatcher</text>
+      <text x="896" y="272" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Sandboxed API &amp; DB calls</text>
     </g>
 
     <!-- ORBITING NODE 3: ACTIVE DEFENSE -->
     <g>
-      <rect x="110" y="380" width="230" height="85" rx="12" fill="#120A1E" stroke="#EF4444" stroke-width="1.8"/>
-      <rect x="110" y="380" width="230" height="4" rx="2" fill="#EF4444"/>
-      ${renderSvgIcon('shield', 126, 398, '#EF4444')}
-      <text x="160" y="410" font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#EF4444" letter-spacing="1">ACTIVE DEFENSE</text>
-      <text x="160" y="428" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Safety Guardrail</text>
-      <text x="126" y="452" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Step bounds &amp; command filter</text>
+      <rect x="80" y="335" width="240" height="92" rx="12" fill="#120A1E" stroke="#EF4444" stroke-width="1.8"/>
+      <rect x="80" y="335" width="240" height="4" rx="2" fill="#EF4444"/>
+      ${renderSvgIcon('shield', 96, 352, '#EF4444')}
+      <text x="130" y="362" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#EF4444" letter-spacing="1">ACTIVE DEFENSE</text>
+      <text x="130" y="386" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Safety Guardrail</text>
+      <text x="96" y="412" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Step bounds &amp; command filter</text>
     </g>
 
     <!-- ORBITING NODE 4: AUDIT STORE -->
     <g>
-      <rect x="860" y="380" width="230" height="85" rx="12" fill="#07151C" stroke="#34D399" stroke-width="1.8"/>
-      <rect x="860" y="380" width="230" height="4" rx="2" fill="#34D399"/>
-      ${renderSvgIcon('log', 876, 398, '#34D399')}
-      <text x="910" y="410" font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#34D399" letter-spacing="1">OBSERVABILITY</text>
-      <text x="910" y="428" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Audit Memory</text>
-      <text x="876" y="452" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Immutable telemetry log</text>
+      <rect x="880" y="335" width="240" height="92" rx="12" fill="#07151C" stroke="#34D399" stroke-width="1.8"/>
+      <rect x="880" y="335" width="240" height="4" rx="2" fill="#34D399"/>
+      ${renderSvgIcon('log', 896, 352, '#34D399')}
+      <text x="930" y="362" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#34D399" letter-spacing="1">OBSERVABILITY</text>
+      <text x="930" y="386" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Audit Memory</text>
+      <text x="896" y="412" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Immutable telemetry log</text>
     </g>
 
     <!-- Bottom Telemetry HUD Bar -->
     <g>
-      <rect x="70" y="495" width="1060" height="50" rx="10" fill="#040816" stroke="#1E2A4A" stroke-width="1.5"/>
-      <circle cx="95" cy="520" r="4" fill="#38BDF8"/>
-      <text x="110" y="524" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#F8FAFC">Status: Autonomous Agent Active</text>
+      <rect x="70" y="475" width="1060" height="58" rx="12" fill="#040816" stroke="#1E2A4A" stroke-width="1.5"/>
+      <circle cx="95" cy="504" r="5" fill="#38BDF8"/>
+      <text x="112" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Status: Autonomous Agent Active</text>
       
-      <circle cx="450" cy="520" r="4" fill="#34D399"/>
-      <text x="465" y="524" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#F8FAFC">Confidence: 99.8% Grounded</text>
+      <circle cx="465" cy="504" r="5" fill="#34D399"/>
+      <text x="482" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Confidence: Formally Grounded</text>
       
-      <circle cx="820" cy="520" r="4" fill="#818CF8"/>
-      <text x="835" y="524" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#F8FAFC">Safety Gate: Human-in-the-Loop Active</text>
+      <circle cx="830" cy="504" r="5" fill="#818CF8"/>
+      <text x="847" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Safety Gate: Human-in-the-Loop Active</text>
     </g>
   `;
 }
@@ -993,7 +1016,7 @@ function renderFuturisticAI(config: VisualConfig): string {
 /**
  * STYLE E: CODE & DEVELOPER VISUAL
  * Realistic coding workstation, floating IDE editor window with syntax highlighting,
- * and execution speed metrics.
+ * and clean technical principles.
  */
 function renderCodeDeveloper(config: VisualConfig): string {
   const lines = config.codeLines || [
@@ -1008,20 +1031,20 @@ function renderCodeDeveloper(config: VisualConfig): string {
   ];
 
   const startX = 70;
-  const startY = 185;
-  const boxWidth = 720;
-  const boxHeight = 340;
+  const startY = 195;
+  const boxWidth = 700;
+  const boxHeight = 345;
 
   const codeSvg = lines.map((line, i) => {
-    const y = startY + 68 + i * 32;
+    const y = startY + 74 + i * 32;
     const codeTextSvg = line.code
       ? `<text x="${startX + 60}" y="${y}" font-family="'Roboto Mono', monospace" font-size="15" font-weight="600" fill="#38BDF8">${escapeXml(line.code)}</text>`
       : '';
     const commentSvg = line.comment
-      ? `<text x="${startX + 420}" y="${y}" font-family="'Roboto Mono', monospace" font-size="12" fill="#94A3B8">${escapeXml(line.comment)}</text>`
+      ? `<text x="${startX + 410}" y="${y}" font-family="'Roboto Mono', monospace" font-size="14" fill="#94A3B8">${escapeXml(line.comment)}</text>`
       : '';
     return `
-      <text x="${startX + 26}" y="${y}" font-family="'Roboto Mono', monospace" font-size="13" font-weight="600" fill="#475569">${String(i + 1).padStart(2, '0')}</text>
+      <text x="${startX + 24}" y="${y}" font-family="'Roboto Mono', monospace" font-size="14" font-weight="600" fill="#475569">${String(i + 1).padStart(2, '0')}</text>
       ${codeTextSvg}
       ${commentSvg}
     `;
@@ -1033,14 +1056,19 @@ function renderCodeDeveloper(config: VisualConfig): string {
     'Brand types prevent primitive identifier collisions',
   ];
 
-  const sidebarSvg = takeaways.map((t, idx) => {
-    const y = startY + 60 + idx * 85;
+  const sidebarSvg = takeaways.slice(0, 3).map((t, idx) => {
+    const y = startY + 45 + idx * 95;
+    const tLines = wrapTextToWidth(t, 300, 14, 2);
+    const tTextSvg = tLines.map((line, li) => `
+      <text x="806" y="${y + 50 + li * 20}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(line)}</text>
+    `).join('\n');
+
     return `
       <g>
-        <rect x="820" y="${y}" width="310" height="72" rx="10" fill="#0C1326" stroke="#1E2A48" stroke-width="1.5"/>
-        <circle cx="842" cy="${y + 24}" r="4" fill="${config.accentColor}"/>
-        <text x="856" y="${y + 28}" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#F8FAFC">Principle 0${idx + 1}</text>
-        <text x="842" y="${y + 50}" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">${escapeXml(t)}</text>
+        <rect x="786" y="${y}" width="344" height="85" rx="10" fill="#0C1326" stroke="#1E2A48" stroke-width="1.5"/>
+        <circle cx="806" cy="${y + 24}" r="4" fill="${config.accentColor}"/>
+        <text x="822" y="${y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#F8FAFC">Principle 0${idx + 1}</text>
+        ${tTextSvg}
       </g>
     `;
   }).join('\n');
@@ -1053,37 +1081,38 @@ function renderCodeDeveloper(config: VisualConfig): string {
     <rect x="${startX}" y="${startY}" width="${boxWidth}" height="${boxHeight}" rx="14" fill="#050814" stroke="#1E293B" stroke-width="2"/>
     
     <!-- Code Window Title Bar -->
-    <rect x="${startX}" y="${startY}" width="${boxWidth}" height="40" rx="14" fill="#0F172A"/>
-    <circle cx="${startX + 22}" cy="${startY + 20}" r="5.5" fill="#EF4444"/>
-    <circle cx="${startX + 40}" cy="${startY + 20}" r="5.5" fill="#F59E0B"/>
-    <circle cx="${startX + 58}" cy="${startY + 20}" r="5.5" fill="#10B981"/>
+    <rect x="${startX}" y="${startY}" width="${boxWidth}" height="42" rx="14" fill="#0F172A"/>
+    <circle cx="${startX + 22}" cy="${startY + 21}" r="5.5" fill="#EF4444"/>
+    <circle cx="${startX + 40}" cy="${startY + 21}" r="5.5" fill="#F59E0B"/>
+    <circle cx="${startX + 58}" cy="${startY + 21}" r="5.5" fill="#10B981"/>
     
     <!-- File Tab -->
-    <rect x="${startX + 82}" y="${startY + 6}" width="180" height="28" rx="6" fill="#050814" stroke="#1E293B" stroke-width="1"/>
-    <text x="${startX + 98}" y="${startY + 24}" font-family="'Roboto Mono', monospace" font-size="12" font-weight="600" fill="#38BDF8">typescript-pattern.ts</text>
+    <rect x="${startX + 82}" y="${startY + 7}" width="185" height="28" rx="6" fill="#050814" stroke="#1E293B" stroke-width="1"/>
+    <text x="${startX + 98}" y="${startY + 25}" font-family="'Roboto Mono', monospace" font-size="14" font-weight="600" fill="#38BDF8">typescript-pattern.ts</text>
     
     <!-- Floating Benchmark Pill inside Editor -->
-    <rect x="${startX + boxWidth - 190}" y="${startY + 8}" width="175" height="24" rx="12" fill="#030712" stroke="#34D399" stroke-width="1.2"/>
-    <text x="${startX + boxWidth - 102}" y="${startY + 24}" font-family="Inter, sans-serif" font-size="10" font-weight="700" fill="#34D399" text-anchor="middle">0.4ms TTFT • 100% Strict</text>
+    <rect x="${startX + boxWidth - 250}" y="${startY + 8}" width="235" height="26" rx="13" fill="#030712" stroke="#34D399" stroke-width="1.2"/>
+    <text x="${startX + boxWidth - 132}" y="${startY + 25}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" text-anchor="middle">Strict Type Safety • Zero Casts</text>
 
     <!-- Code Content Lines -->
     ${codeSvg}
 
     <!-- Right Column: Key Technical Advantages -->
-    <text x="820" y="${startY + 28}" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">KEY TECHNICAL ADVANTAGES</text>
+    <text x="786" y="${startY + 26}" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">KEY TECHNICAL ADVANTAGES</text>
     ${sidebarSvg}
   `;
 }
 
 /**
  * STYLE F: DATA VISUALIZATION
- * Clean metrics dashboard, big readable numbers, latency benchmarks, and comparative charts.
+ * Clean metrics dashboard, big readable labels, architectural comparison charts,
+ * and vertically stacked benchmark principles.
  */
 function renderDataVisualization(config: VisualConfig): string {
   const metrics = config.metrics || [
-    { value: '99.99%', label: 'Availability SLA', subtext: 'Global Anycast Edge', color: '#38BDF8' },
-    { value: '< 12ms', label: 'P99 Latency', subtext: 'Sub-second UX P99', color: '#818CF8' },
-    { value: '10x', label: 'Throughput Multiplier', subtext: 'Zero Locking Contention', color: '#34D399' },
+    { value: 'EDGE', label: 'Anycast Ingress', subtext: 'Global Anycast Edge Gateway', color: '#38BDF8' },
+    { value: 'MESH', label: 'Stateless Service Fleet', subtext: 'Decoupled Worker Routing', color: '#818CF8' },
+    { value: 'STORAGE', label: 'Replicated Persistence', subtext: 'Multi-Region WAL Consensus', color: '#34D399' },
   ];
 
   const cardWidth = 336;
@@ -1093,30 +1122,30 @@ function renderDataVisualization(config: VisualConfig): string {
     return `
       <!-- Metric Card ${i + 1} -->
       <g>
-        <rect x="${x + 2}" y="197" width="${cardWidth}" height="145" rx="14" fill="#000000" opacity="0.45"/>
-        <rect x="${x}" y="195" width="${cardWidth}" height="145" rx="14" fill="#091226" stroke="#1D2A4A" stroke-width="1.8"/>
+        <rect x="${x + 2}" y="197" width="${cardWidth}" height="150" rx="14" fill="#000000" opacity="0.45"/>
+        <rect x="${x}" y="195" width="${cardWidth}" height="150" rx="14" fill="#091226" stroke="#1D2A4A" stroke-width="1.8"/>
         <rect x="${x}" y="195" width="${cardWidth}" height="4" rx="2" fill="${m.color}"/>
         
-        <!-- Big Number -->
-        <text x="${x + 24}" y="258" font-family="Inter, sans-serif" font-size="44" font-weight="900" fill="#FFFFFF">${escapeXml(m.value)}</text>
+        <!-- Authentic Architecture Concept Tag -->
+        <text x="${x + 24}" y="254" font-family="Inter, sans-serif" font-size="32" font-weight="900" fill="#FFFFFF">${escapeXml(m.value)}</text>
         
         <!-- Label & Subtext -->
-        <text x="${x + 24}" y="295" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="${m.color}">${escapeXml(m.label)}</text>
-        <text x="${x + 24}" y="318" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">${escapeXml(m.subtext)}</text>
+        <text x="${x + 24}" y="290" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="${m.color}">${escapeXml(m.label)}</text>
+        <text x="${x + 24}" y="318" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(m.subtext)}</text>
       </g>
     `;
   }).join('\n');
 
   const takeaways = config.takeaways || [
-    'Distributed semantic caching absorbs 75% of repeated backend calls',
-    'Connection pooling prevents socket starvation under peak load spikes',
-    'Circuit breakers isolate failing dependencies before cascades propagate',
+    'Semantic caching prevents redundant expensive LLM calls',
+    'Hybrid search combines semantic dense vectors with lexical exact tokens',
+    'Strict JSON schema validation eliminates downstream deserialization crashes',
   ];
 
-  const takeawaySvg = takeaways.map((t, idx) => `
+  const takeawaySvg = takeaways.slice(0, 3).map((t, idx) => `
     <g>
-      <circle cx="${95 + idx * 350}" cy="425" r="4.5" fill="${config.accentColor}"/>
-      <text x="${112 + idx * 350}" y="429" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#E2E8F0">${escapeXml(t)}</text>
+      <circle cx="102" cy="${435 + idx * 36}" r="4.5" fill="${config.accentColor}"/>
+      <text x="120" y="${440 + idx * 36}" font-family="Inter, sans-serif" font-size="15" font-weight="600" fill="#E2E8F0">${escapeXml(t)}</text>
     </g>
   `).join('\n');
 
@@ -1125,11 +1154,11 @@ function renderDataVisualization(config: VisualConfig): string {
     ${metricCardsSvg}
 
     <!-- Bottom Architectural Takeaway Container -->
-    <rect x="74" y="381" width="1056" height="110" rx="14" fill="#000000" opacity="0.4"/>
-    <rect x="70" y="375" width="1060" height="115" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
-    <path d="M 84 376 L 1116 376" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
+    <rect x="74" y="375" width="1056" height="165" rx="14" fill="#000000" opacity="0.4"/>
+    <rect x="70" y="370" width="1060" height="170" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
+    <path d="M 84 371 L 1116 371" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
     
-    <text x="95" y="402" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">PRODUCTION BENCHMARK PRINCIPLES</text>
+    <text x="95" y="402" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">PRODUCTION BENCHMARK PRINCIPLES</text>
     ${takeawaySvg}
   `;
 }
@@ -1138,15 +1167,15 @@ function renderDataVisualization(config: VisualConfig): string {
  * AI AGENT SAFETY SPECIALIZED ARCHITECTURE DIAGRAM
  * Required for Test 10: 6 specific connected stages, intercept flows, and governance gates.
  */
-function renderAISafetyDiagram(config: VisualConfig): string {
-  const userBox = { x: 70, y: 185, w: 220, h: 90 };
-  const agentBox = { x: 350, y: 185, w: 230, h: 90 };
-  const toolBox = { x: 640, y: 185, w: 230, h: 90 };
-  const auditBox = { x: 930, y: 185, w: 200, h: 90 };
+function renderAISafetyDiagram(_config: VisualConfig): string {
+  const userBox = { x: 70, y: 195, w: 225, h: 95 };
+  const agentBox = { x: 360, y: 195, w: 235, h: 95 };
+  const toolBox = { x: 675, y: 195, w: 225, h: 95 };
+  const auditBox = { x: 965, y: 195, w: 165, h: 95 };
 
-  const guardBox = { x: 350, y: 340, w: 260, h: 140 };
-  const humanBox = { x: 670, y: 340, w: 240, h: 140 };
-  const ruleBox = { x: 930, y: 340, w: 200, h: 140 };
+  const guardBox = { x: 360, y: 350, w: 260, h: 180 };
+  const humanBox = { x: 660, y: 350, w: 250, h: 180 };
+  const ruleBox = { x: 940, y: 350, w: 190, h: 180 };
 
   return `
     <!-- Top Pipeline Row -->
@@ -1155,118 +1184,122 @@ function renderAISafetyDiagram(config: VisualConfig): string {
       <rect x="${userBox.x}" y="${userBox.y}" width="${userBox.w}" height="${userBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
       <rect x="${userBox.x}" y="${userBox.y}" width="${userBox.w}" height="4" rx="2" fill="#38BDF8"/>
       ${renderSvgIcon('user', userBox.x + 16, userBox.y + 16, '#38BDF8')}
-      <text x="${userBox.x + 50}" y="${userBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#38BDF8" letter-spacing="1">STEP 01</text>
-      <text x="${userBox.x + 50}" y="${userBox.y + 44}" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">User Request</text>
-      <text x="${userBox.x + 16}" y="${userBox.y + 72}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">Natural language input &amp; task prompt</text>
+      <text x="${userBox.x + 50}" y="${userBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" letter-spacing="1">STEP 01</text>
+      <text x="${userBox.x + 50}" y="${userBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">User Request</text>
+      <text x="${userBox.x + 16}" y="${userBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Natural language task input</text>
     </g>
 
     <!-- Arrow 1: User -> Agent -->
     <line x1="${userBox.x + userBox.w}" y1="${userBox.y + 45}" x2="${agentBox.x}" y2="${userBox.y + 45}" stroke="#475569" stroke-width="2" stroke-dasharray="4 2"/>
     <polygon points="${agentBox.x - 3},${userBox.y + 41} ${agentBox.x + 3},${userBox.y + 45} ${agentBox.x - 3},${userBox.y + 49}" fill="#64748B"/>
-    <text x="320" y="${userBox.y + 38}" font-family="Inter, sans-serif" font-size="10" fill="#64748B" text-anchor="middle">Task</text>
+    <rect x="303" y="${userBox.y + 32}" width="48" height="24" rx="12" fill="#0B132B" stroke="#475569" stroke-width="1"/>
+    <text x="327" y="${userBox.y + 49}" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#94A3B8" text-anchor="middle">Task</text>
 
     <!-- Node 2: Agent Orchestrator -->
     <g>
       <rect x="${agentBox.x}" y="${agentBox.y}" width="${agentBox.w}" height="${agentBox.h}" rx="10" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
       <rect x="${agentBox.x}" y="${agentBox.y}" width="${agentBox.w}" height="4" rx="2" fill="#38BDF8"/>
       ${renderSvgIcon('brain', agentBox.x + 16, agentBox.y + 16, '#38BDF8')}
-      <text x="${agentBox.x + 50}" y="${agentBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#38BDF8" letter-spacing="1">ORCHESTRATION</text>
-      <text x="${agentBox.x + 50}" y="${agentBox.y + 44}" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Agent Orchestrator</text>
-      <text x="${agentBox.x + 16}" y="${agentBox.y + 72}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">ReAct reasoning &amp; plan generation</text>
+      <text x="${agentBox.x + 50}" y="${agentBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" letter-spacing="1">ORCHESTRATION</text>
+      <text x="${agentBox.x + 50}" y="${agentBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Agent Orchestrator</text>
+      <text x="${agentBox.x + 16}" y="${agentBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">ReAct reasoning &amp; plan</text>
     </g>
 
     <!-- Arrow 2: Agent -> Tool -->
     <line x1="${agentBox.x + agentBox.w}" y1="${agentBox.y + 45}" x2="${toolBox.x}" y2="${agentBox.y + 45}" stroke="#475569" stroke-width="2" stroke-dasharray="4 2"/>
     <polygon points="${toolBox.x - 3},${agentBox.y + 41} ${toolBox.x + 3},${agentBox.y + 45} ${toolBox.x - 3},${agentBox.y + 49}" fill="#64748B"/>
-    <text x="610" y="${agentBox.y + 38}" font-family="Inter, sans-serif" font-size="10" fill="#64748B" text-anchor="middle">Dispatch</text>
+    <rect x="602" y="${agentBox.y + 32}" width="65" height="24" rx="12" fill="#0B132B" stroke="#475569" stroke-width="1"/>
+    <text x="634" y="${agentBox.y + 49}" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#94A3B8" text-anchor="middle">Dispatch</text>
 
     <!-- Node 3: Tool Execution -->
     <g>
       <rect x="${toolBox.x}" y="${toolBox.y}" width="${toolBox.w}" height="${toolBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
       <rect x="${toolBox.x}" y="${toolBox.y}" width="${toolBox.w}" height="4" rx="2" fill="#818CF8"/>
       ${renderSvgIcon('tool', toolBox.x + 16, toolBox.y + 16, '#818CF8')}
-      <text x="${toolBox.x + 50}" y="${toolBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#818CF8" letter-spacing="1">EXECUTION</text>
-      <text x="${toolBox.x + 50}" y="${toolBox.y + 44}" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Tool Execution</text>
-      <text x="${toolBox.x + 16}" y="${toolBox.y + 72}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">APIs, Databases &amp; External CLI</text>
+      <text x="${toolBox.x + 50}" y="${toolBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#818CF8" letter-spacing="1">EXECUTION</text>
+      <text x="${toolBox.x + 50}" y="${toolBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Tool Execution</text>
+      <text x="${toolBox.x + 16}" y="${toolBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">APIs, Databases &amp; Sandbox</text>
     </g>
 
     <!-- Arrow 3: Tool -> Audit Logs -->
     <line x1="${toolBox.x + toolBox.w}" y1="${toolBox.y + 45}" x2="${auditBox.x}" y2="${toolBox.y + 45}" stroke="#475569" stroke-width="2" stroke-dasharray="4 2"/>
     <polygon points="${auditBox.x - 3},${toolBox.y + 41} ${auditBox.x + 3},${toolBox.y + 45} ${auditBox.x - 3},${toolBox.y + 49}" fill="#64748B"/>
-    <text x="900" y="${toolBox.y + 38}" font-family="Inter, sans-serif" font-size="10" fill="#64748B" text-anchor="middle">Trace</text>
+    <rect x="907" y="${toolBox.y + 32}" width="50" height="24" rx="12" fill="#0B132B" stroke="#475569" stroke-width="1"/>
+    <text x="932" y="${toolBox.y + 49}" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#94A3B8" text-anchor="middle">Trace</text>
 
     <!-- Node 4: Audit Logs -->
     <g>
       <rect x="${auditBox.x}" y="${auditBox.y}" width="${auditBox.w}" height="${auditBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
       <rect x="${auditBox.x}" y="${auditBox.y}" width="${auditBox.w}" height="4" rx="2" fill="#34D399"/>
       ${renderSvgIcon('log', auditBox.x + 16, auditBox.y + 16, '#34D399')}
-      <text x="${auditBox.x + 50}" y="${auditBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#34D399" letter-spacing="1">OBSERVABILITY</text>
-      <text x="${auditBox.x + 50}" y="${auditBox.y + 44}" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">Audit Logs</text>
-      <text x="${auditBox.x + 16}" y="${auditBox.y + 72}" font-family="Inter, sans-serif" font-size="12" fill="#94A3B8">Input/output telemetry store</text>
+      <text x="${auditBox.x + 48}" y="${auditBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" letter-spacing="1">AUDIT</text>
+      <text x="${auditBox.x + 48}" y="${auditBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Audit Logs</text>
+      <text x="${auditBox.x + 16}" y="${auditBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Telemetry store</text>
     </g>
 
     <!-- CONTROL LAYER / GOVERNANCE (Bottom Row) -->
     <!-- Safety Intercept Path -->
     <path d="M ${agentBox.x + 115} ${agentBox.y + agentBox.h} L ${agentBox.x + 115} ${guardBox.y}" fill="none" stroke="#EF4444" stroke-width="2" stroke-dasharray="3 3"/>
     <polygon points="${agentBox.x + 111},${guardBox.y - 2} ${agentBox.x + 115},${guardBox.y + 4} ${agentBox.x + 119},${guardBox.y - 2}" fill="#EF4444"/>
-    <rect x="${agentBox.x + 65}" y="${(agentBox.y + agentBox.h + guardBox.y) / 2 - 8}" width="60" height="16" rx="8" fill="#1E1218" stroke="#EF4444" stroke-width="1"/>
-    <text x="${agentBox.x + 95}" y="${(agentBox.y + agentBox.h + guardBox.y) / 2 + 3}" font-family="Inter, sans-serif" font-size="9" font-weight="700" fill="#EF4444" text-anchor="middle">Intercept</text>
+    <rect x="${agentBox.x + 72}" y="${(agentBox.y + agentBox.h + guardBox.y) / 2 - 12}" width="86" height="24" rx="12" fill="#1E1218" stroke="#EF4444" stroke-width="1.2"/>
+    <text x="${agentBox.x + 115}" y="${(agentBox.y + agentBox.h + guardBox.y) / 2 + 5}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#EF4444" text-anchor="middle">Intercept</text>
 
     <!-- Guardrail Enforcement Path -->
     <path d="M ${guardBox.x + guardBox.w - 30} ${guardBox.y} L ${guardBox.x + guardBox.w - 30} ${agentBox.y + agentBox.h + 25} L ${toolBox.x + 60} ${agentBox.y + agentBox.h + 25} L ${toolBox.x + 60} ${toolBox.y + toolBox.h}" fill="none" stroke="#10B981" stroke-width="2"/>
     <polygon points="${toolBox.x + 56},${toolBox.y + toolBox.h + 6} ${toolBox.x + 60},${toolBox.y + toolBox.h} ${toolBox.x + 64},${toolBox.y + toolBox.h + 6}" fill="#10B981"/>
-    <rect x="${toolBox.x - 30}" y="${agentBox.y + agentBox.h + 16}" width="125" height="18" rx="9" fill="#062B28" stroke="#10B981" stroke-width="1"/>
-    <text x="${toolBox.x + 32}" y="${agentBox.y + agentBox.h + 29}" font-family="Inter, sans-serif" font-size="9" font-weight="700" fill="#34D399" text-anchor="middle">Enforce &amp; Authorize</text>
+    <rect x="${toolBox.x - 30}" y="${agentBox.y + agentBox.h + 14}" width="140" height="24" rx="12" fill="#062B28" stroke="#10B981" stroke-width="1.2"/>
+    <text x="${toolBox.x + 40}" y="${agentBox.y + agentBox.h + 31}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" text-anchor="middle">Authorize Call</text>
 
     <!-- Node 5: Safety Guardrails -->
     <g>
       <rect x="${guardBox.x}" y="${guardBox.y}" width="${guardBox.w}" height="${guardBox.h}" rx="12" fill="#131B2E" stroke="#EF4444" stroke-width="2"/>
       <rect x="${guardBox.x}" y="${guardBox.y}" width="${guardBox.w}" height="4" rx="2" fill="#EF4444"/>
       ${renderSvgIcon('shield', guardBox.x + 16, guardBox.y + 18, '#EF4444')}
-      <text x="${guardBox.x + 50}" y="${guardBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#EF4444" letter-spacing="1">ACTIVE DEFENSE</text>
-      <text x="${guardBox.x + 50}" y="${guardBox.y + 46}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Safety Guardrails</text>
+      <text x="${guardBox.x + 50}" y="${guardBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#EF4444" letter-spacing="1">ACTIVE DEFENSE</text>
+      <text x="${guardBox.x + 50}" y="${guardBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Safety Guardrails</text>
       
-      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 72}" r="3" fill="#EF4444"/>
-      <text x="${guardBox.x + 34}" y="${guardBox.y + 76}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Execution Step &amp; Token Upper Limits</text>
+      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 76}" r="3.5" fill="#EF4444"/>
+      <text x="${guardBox.x + 36}" y="${guardBox.y + 81}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Step &amp; Token Upper Limits</text>
       
-      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 96}" r="3" fill="#EF4444"/>
-      <text x="${guardBox.x + 34}" y="${guardBox.y + 100}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Deterministic Schema Validation</text>
+      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 108}" r="3.5" fill="#EF4444"/>
+      <text x="${guardBox.x + 36}" y="${guardBox.y + 113}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Deterministic Validation</text>
       
-      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 120}" r="3" fill="#EF4444"/>
-      <text x="${guardBox.x + 34}" y="${guardBox.y + 124}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Destructive Command Interception</text>
+      <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 140}" r="3.5" fill="#EF4444"/>
+      <text x="${guardBox.x + 36}" y="${guardBox.y + 145}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Destructive Command Filter</text>
     </g>
 
     <!-- Arrow from Guardrails to Human Approval -->
-    <line x1="${guardBox.x + guardBox.w}" y1="${guardBox.y + 70}" x2="${humanBox.x}" y2="${guardBox.y + 70}" stroke="#F59E0B" stroke-width="2" stroke-dasharray="4 2"/>
-    <polygon points="${humanBox.x - 3},${guardBox.y + 66} ${humanBox.x + 3},${guardBox.y + 70} ${humanBox.x - 3},${guardBox.y + 74}" fill="#F59E0B"/>
-    <text x="${(guardBox.x + guardBox.w + humanBox.x) / 2}" y="${guardBox.y + 62}" font-family="Inter, sans-serif" font-size="10" fill="#F59E0B" text-anchor="middle">Escalate</text>
+    <line x1="${guardBox.x + guardBox.w}" y1="${guardBox.y + 90}" x2="${humanBox.x}" y2="${guardBox.y + 90}" stroke="#F59E0B" stroke-width="2" stroke-dasharray="4 2"/>
+    <polygon points="${humanBox.x - 3},${guardBox.y + 86} ${humanBox.x + 3},${guardBox.y + 90} ${humanBox.x - 3},${guardBox.y + 94}" fill="#F59E0B"/>
+    <rect x="${(guardBox.x + guardBox.w + humanBox.x) / 2 - 18}" y="${guardBox.y + 78}" width="36" height="24" rx="12" fill="#241B0D" stroke="#F59E0B" stroke-width="1"/>
+    <text x="${(guardBox.x + guardBox.w + humanBox.x) / 2}" y="${guardBox.y + 95}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F59E0B" text-anchor="middle">Ask</text>
 
     <!-- Node 6: Human Approval Gate -->
     <g>
       <rect x="${humanBox.x}" y="${humanBox.y}" width="${humanBox.w}" height="${humanBox.h}" rx="12" fill="#131B2E" stroke="#F59E0B" stroke-width="2"/>
       <rect x="${humanBox.x}" y="${humanBox.y}" width="${humanBox.w}" height="4" rx="2" fill="#F59E0B"/>
       ${renderSvgIcon('check', humanBox.x + 16, humanBox.y + 18, '#F59E0B')}
-      <text x="${humanBox.x + 50}" y="${humanBox.y + 26}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#F59E0B" letter-spacing="1">GOVERNANCE GATE</text>
-      <text x="${humanBox.x + 50}" y="${humanBox.y + 46}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Human Approval</text>
+      <text x="${humanBox.x + 50}" y="${humanBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F59E0B" letter-spacing="1">GOVERNANCE GATE</text>
+      <text x="${humanBox.x + 50}" y="${humanBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Human Approval</text>
       
-      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 72}" r="3" fill="#F59E0B"/>
-      <text x="${humanBox.x + 34}" y="${humanBox.y + 76}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Destructive action quarantine</text>
+      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 76}" r="3.5" fill="#F59E0B"/>
+      <text x="${humanBox.x + 36}" y="${humanBox.y + 81}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Destructive action quarantine</text>
       
-      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 96}" r="3" fill="#F59E0B"/>
-      <text x="${humanBox.x + 34}" y="${humanBox.y + 100}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Explicit signed user signoff</text>
+      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 108}" r="3.5" fill="#F59E0B"/>
+      <text x="${humanBox.x + 36}" y="${humanBox.y + 113}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Explicit signed user signoff</text>
       
-      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 120}" r="3" fill="#F59E0B"/>
-      <text x="${humanBox.x + 34}" y="${humanBox.y + 124}" font-family="Inter, sans-serif" font-size="12" fill="#E2E8F0">Audit trail verification</text>
+      <circle cx="${humanBox.x + 22}" cy="${humanBox.y + 140}" r="3.5" fill="#F59E0B"/>
+      <text x="${humanBox.x + 36}" y="${humanBox.y + 145}" font-family="Inter, sans-serif" font-size="14" fill="#E2E8F0">Audit trail verification</text>
     </g>
 
     <!-- Takeaway Summary Card (Right Column) -->
     <g>
       <rect x="${ruleBox.x}" y="${ruleBox.y}" width="${ruleBox.w}" height="${ruleBox.h}" rx="12" fill="#0B132B" stroke="#1E293B" stroke-width="1.5"/>
-      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 28}" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#38BDF8" letter-spacing="1">SECURITY PRINCIPLE</text>
-      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 52}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Zero Trust Tools</text>
-      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 76}" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Never grant raw API</text>
-      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 94}" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">access without</text>
-      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 112}" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">strict sandboxing.</text>
+      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 30}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" letter-spacing="1">SECURITY</text>
+      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 54}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Zero Trust Tools</text>
+      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 82}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Never grant raw API</text>
+      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 106}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">access without</text>
+      <text x="${ruleBox.x + 16}" y="${ruleBox.y + 130}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">strict sandboxing.</text>
     </g>
   `;
 }
@@ -1281,7 +1314,9 @@ export function generateEnrichedTopicVisualSvg(
   options?: VisualEngineOptions
 ): { svg: string; visualStyle: VisualStyle; visualTemplate: string } {
   const config = determineVisualConfig(topic, hookTitle, postBody, options);
-  const titleLines = wrapText(config.title, 48, 2);
+  const titleLines = wrapTextToWidth(config.title, 1050, 44, 2);
+  const titleStartY = titleLines.length === 1 ? 132 : 114;
+  const titleLineHeight = 52;
 
   let diagramBodySvg = '';
   switch (config.visualStyle) {
@@ -1315,7 +1350,7 @@ export function generateEnrichedTopicVisualSvg(
   }
 
   const titleSvg = titleLines.map((line, idx) => `
-    <text x="70" y="${118 + idx * 30}" font-family="Inter, sans-serif" font-size="26" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">${escapeXml(line)}</text>
+    <text x="70" y="${titleStartY + idx * titleLineHeight}" font-family="Inter, sans-serif" font-size="44" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">${escapeXml(line)}</text>
   `).join('\n');
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
@@ -1354,21 +1389,27 @@ export function generateEnrichedTopicVisualSvg(
     </g>
 
     <!-- Header Badge -->
-    <rect x="70" y="42" width="460" height="34" rx="17" fill="#0F172A" stroke="#1E293B" stroke-width="1.5"/>
+    <rect x="70" y="42" width="480" height="34" rx="17" fill="#0F172A" stroke="#1E293B" stroke-width="1.5"/>
     <circle cx="90" cy="59" r="4.5" fill="${config.accentColor}"/>
-    <text x="104" y="63" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="${config.accentColor}" letter-spacing="1.2">${escapeXml(config.badge)}</text>
+    <text x="104" y="64" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="${config.accentColor}" letter-spacing="1.2">${escapeXml(config.badge)}</text>
 
-    <!-- Main Headline -->
+    <!-- Main Headline (Strictly 44px) -->
     ${titleSvg}
 
-    <!-- Diagram Content Body (Pure SVG, Zero foreignObject) -->
+    <!-- Diagram Content Body (Pure SVG, Zero foreignObject, >= 14px Font Sizes) -->
     ${diagramBodySvg}
 
     <!-- Footer Branding -->
     <rect x="70" y="565" width="1060" height="2" fill="#1E293B"/>
-    <text x="70" y="598" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#64748B" letter-spacing="1">SOFTWARE ENGINEERING &amp; SYSTEM ARCHITECTURE</text>
-    <text x="1130" y="598" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="${config.accentColor}" text-anchor="end" letter-spacing="1">PRODUCTION ARCHITECTURE</text>
+    <text x="70" y="598" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#64748B" letter-spacing="1">SOFTWARE ENGINEERING &amp; SYSTEM ARCHITECTURE</text>
+    <text x="1130" y="598" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="${config.accentColor}" text-anchor="end" letter-spacing="1">PRODUCTION ARCHITECTURE</text>
   </svg>`;
+
+  // Run automated visual quality validation layer
+  const quality = validateVisualQuality(svg);
+  if (!quality.valid) {
+    console.warn(`[visualService] Warning: Visual Quality Validation issues detected for "${config.title}":\n` + quality.errors.join('\n'));
+  }
 
   return {
     svg,

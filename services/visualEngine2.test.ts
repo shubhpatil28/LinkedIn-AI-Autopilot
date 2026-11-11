@@ -11,6 +11,7 @@ import {
 } from './visualService';
 import { convertSvgToPngBuffer, validateSvgOutput, validateSvgTextContent } from './serverVisualService';
 import { getImageProviderStatus, generatePostImage } from './imageProviderService';
+import { validateVisualQuality } from './visualValidationService';
 import { VisualStyle } from '../types';
 
 let passed = 0;
@@ -220,7 +221,11 @@ async function runTests() {
       'Simplicity in system design creates operational resilience at scale.'
     );
 
-    assert(editorialSvg.includes('Simplicity in system design creates operational resilience at scale.'), 'Contains editorial pull quote');
+    assert(
+      editorialSvg.includes('Simplicity in system design') &&
+      editorialSvg.includes('operational resilience at scale'),
+      'Contains editorial pull quote'
+    );
     assert(editorialSvg.includes('Principle 01'), 'Contains numbered editorial principle 01');
     assert(editorialSvg.includes('Principle 02'), 'Contains numbered editorial principle 02');
     assert(editorialSvg.includes('Principle 03'), 'Contains numbered editorial principle 03');
@@ -239,13 +244,13 @@ async function runTests() {
 
     assert(codeSvg.includes('typescript-pattern.ts'), 'Contains file tab header');
     assert(codeSvg.includes('Discriminated Result Union'), 'Contains code syntax comments');
-    assert(codeSvg.includes('0.4ms TTFT'), 'Contains performance benchmark pill');
+    assert(codeSvg.includes('Strict Type Safety'), 'Contains type safety benchmark pill');
   }
 
   // ---------------------------------------------------------------------------
-  // Test 9: Data Visualization Dashboard & Hero Metrics
+  // Test 9: Data Visualization Dashboard & Real Architecture (Zero Fabricated Metrics)
   // ---------------------------------------------------------------------------
-  console.log('\n--- Test 9: Data Visualization Dashboard & Hero Metrics ---');
+  console.log('\n--- Test 9: Data Visualization & RAG Vector Architecture ---');
   {
     const dataSvg = generateTopicVisualSvg(
       'RAG & Vector Search Systems',
@@ -253,9 +258,12 @@ async function runTests() {
       'Semantic caching and hybrid vector retrieval'
     );
 
-    assert(dataSvg.includes('75%'), 'Contains high-impact 75% cost reduction metric');
-    assert(dataSvg.includes('&lt; 18ms'), 'Contains escaped < 18ms vector latency metric');
-    assert(dataSvg.includes('99.4%'), 'Contains 99.4% retrieval recall metric');
+    assert(dataSvg.includes('Semantic Caching'), 'Contains authentic Semantic Caching pipeline component');
+    assert(dataSvg.includes('HNSW Vector Index'), 'Contains authentic HNSW Vector Index stage');
+    assert(dataSvg.includes('Hybrid Reranker'), 'Contains authentic Hybrid Reranker component');
+    assert(!dataSvg.includes('75%'), 'Strictly zero fabricated 75% cost reduction metric');
+    assert(!dataSvg.includes('18ms'), 'Strictly zero fabricated 18ms latency metric');
+    assert(!dataSvg.includes('99.4%'), 'Strictly zero fabricated 99.4% retrieval metric');
   }
 
   // ---------------------------------------------------------------------------
@@ -268,6 +276,38 @@ async function runTests() {
     assert(Boolean(enriched.visualTemplate), 'visualTemplate is set in returned metadata');
     assert(enriched.visualStyle === 'premium_3d', 'Correct visualStyle for cybersecurity');
     assert(enriched.visualTemplate === 'security_shield_defense', 'Correct visualTemplate for cybersecurity');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 11: Visual Engine 3.0 Automated Quality Auditing
+  // ---------------------------------------------------------------------------
+  console.log('\n--- Test 11: Visual Engine 3.0 Automated Quality Auditing ---');
+  {
+    const testTopics = [
+      'AI & LLMs',
+      'RAG & Vector Search Systems',
+      'TypeScript & JavaScript',
+      'System Design & Microservices',
+      'Backend & Databases',
+      'DevOps & Kubernetes',
+      'Cybersecurity & Zero Trust',
+      'Engineering Leadership & Career',
+    ];
+
+    for (const topic of testTopics) {
+      const { svg, visualStyle } = generateEnrichedTopicVisualSvg(topic, `Deep Dive: ${topic}`);
+      const report = validateVisualQuality(svg);
+
+      if (!report.valid) {
+        console.error(`Visual Quality Validation Failures for ${topic} (${visualStyle}):`, report.errors);
+      }
+
+      assert(report.valid === true, `Visual Engine 3.0 audit passes cleanly for ${topic} (${visualStyle})`);
+      assert(report.hasCollisions === false, `Zero text collisions detected for ${topic}`);
+      assert(report.hasOutOfBounds === false, `Zero canvas bounds overflows for ${topic}`);
+      assert(report.hasFabricatedMetrics === false, `Zero fabricated metrics for ${topic}`);
+      assert(report.minFontSize >= 14, `Minimum font size >= 14px for ${topic} (found ${report.minFontSize}px)`);
+    }
   }
 
   console.log('\n============================================================');

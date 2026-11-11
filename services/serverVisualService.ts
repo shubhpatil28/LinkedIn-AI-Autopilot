@@ -1,6 +1,7 @@
 import { Resvg, ResvgRenderOptions } from '@resvg/resvg-js';
 import fs from 'fs';
 import path from 'path';
+import { validateVisualQuality } from './visualValidationService';
 
 /**
  * Resolve the absolute path to a bundled font file under public/fonts/.
@@ -95,6 +96,11 @@ export function validateSvgOutput(rawSvg: string): void {
   const textCount = (rawSvg.match(/<text/g) || []).length;
   if (textCount < 5) {
     throw new Error(`Invalid SVG density: expected at least 5 <text> elements, found ${textCount}`);
+  }
+
+  const quality = validateVisualQuality(rawSvg);
+  if (!quality.valid) {
+    throw new Error(`Visual Quality Validation Failed:\n- ${quality.errors.join('\n- ')}`);
   }
 }
 

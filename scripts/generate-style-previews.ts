@@ -9,6 +9,7 @@ import path from 'path';
 import { generateEnrichedTopicVisualSvg } from '../services/visualService';
 import { convertSvgToPngBuffer, validateSvgOutput, validateSvgTextContent } from '../services/serverVisualService';
 import { generatePostImage } from '../services/imageProviderService';
+import { validateVisualQuality } from '../services/visualValidationService';
 
 interface TopicSample {
   id: string;
@@ -126,7 +127,7 @@ async function main() {
       body: sample.body,
     });
 
-    // 2. Validate SVG content
+    // 2. Validate SVG content & Visual Engine 3.0 Quality Layer
     let rawSvg = result.imageUrl;
     if (rawSvg.startsWith('data:image/svg+xml')) {
       const commaIdx = rawSvg.indexOf(',');
@@ -134,6 +135,10 @@ async function main() {
     }
     validateSvgOutput(rawSvg);
     validateSvgTextContent(rawSvg);
+    const qualityReport = validateVisualQuality(rawSvg);
+    if (!qualityReport.valid) {
+      throw new Error(`Visual Quality audit failed for ${sample.id}:\n${qualityReport.errors.join('\n')}`);
+    }
 
     // 3. Convert to PNG buffer
     const pngBuffer = await convertSvgToPngBuffer(rawSvg);
@@ -184,12 +189,12 @@ async function main() {
   }
 
   // 6. Build HTML Contact Sheet
-  console.log('\n[Engine 2.0] Building visual contact sheet...');
+  console.log('\n[Engine 3.0] Building visual contact sheet...');
   const contactSheetHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>LinkedIn AI Autopilot - Premium Visual Engine 2.0 Contact Sheet</title>
+  <title>LinkedIn AI Autopilot - Premium Visual Engine 3.0 Contact Sheet</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
