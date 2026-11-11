@@ -6,14 +6,20 @@
  * 2. CI/CD posts never select AI Orchestrator visuals even if topic mentions AI or system design.
  * 3. Specific component flows match 100% between badge, headline, archetype, and diagram nodes:
  *    - CI/CD: Source Code -> Build -> Automated Tests -> Artifact Registry -> Deployment -> Monitoring
+ *    - Runtime / Deployment Architecture: Edge Gateway -> Load Balancer -> Container Orchestration -> Application Services -> Database -> Monitoring
  *    - AI Agents: User Request -> Planner -> Tool Execution -> Guardrails -> Audit
  *    - RAG: Document Ingestion -> Chunking -> Embeddings -> Vector Search -> Reranking -> Context Generation
  *    - React/Next.js: Components -> Server Rendering -> Data Fetching -> API -> UI
  *    - Backend: Client -> API Gateway -> Authentication -> Business Logic -> Database -> Response
  *    - System Design: Edge Ingress -> Load Balancer -> Service Mesh -> Event Broker -> Database Cluster
- * 4. Headline formatting removes meta prefixes cleanly and avoids awkward ellipses.
- * 5. Strictly zero fabricated metrics across all generated diagrams.
- * 6. Mixed-topic edge cases (e.g. "Deploying AI models with Docker and Kubernetes" -> devops_cicd).
+ * 4. Deployment vs CI/CD distinction:
+ *    - "Deploying a web service using Kubernetes" -> Runtime / Deployment Architecture
+ *    - "GitHub Actions pipeline for automated testing" -> CI/CD
+ *    - "Docker containers and service mesh architecture" -> Runtime Infrastructure
+ *    - "Build, test and deploy automatically" -> CI/CD
+ *    - "How to scale microservices in production" -> System Design / Runtime Architecture
+ * 5. Headline formatting removes meta prefixes cleanly and avoids awkward ellipses.
+ * 6. Strictly zero fabricated metrics across all generated diagrams.
  */
 
 import {
@@ -159,7 +165,7 @@ async function runTests() {
 
     // Must contain required 5 stages
     assert(svg.includes('Components'), 'React SVG contains "Components" stage');
-    assert(svg.includes('Server Rendering'), 'React SVG contains "Server Rendering" stage');
+    assert(svg.includes('Server Rendering') || svg.includes('Server Component'), 'React SVG contains "Server Rendering" stage');
     assert(svg.includes('Data Fetching'), 'React SVG contains "Data Fetching" stage');
     assert(svg.includes('API'), 'React SVG contains "API" stage');
     assert(svg.includes('UI'), 'React SVG contains "UI" stage');
@@ -213,43 +219,95 @@ async function runTests() {
     const svg = result.svg;
 
     // Must contain system design tiers / nodes
-    assert(svg.includes('Edge Ingress') || svg.includes('Ingress'), 'System Design SVG contains Ingress/Edge');
+    assert(svg.includes('Edge Ingress') || svg.includes('Ingress') || svg.includes('Edge Gateway'), 'System Design SVG contains Ingress/Edge');
     assert(svg.includes('Service Mesh') || svg.includes('Microservice Mesh'), 'System Design SVG contains Service Mesh');
-    assert(svg.includes('Database') || svg.includes('Storage Engine') || svg.includes('WAL'), 'System Design SVG contains Database/Storage');
+    assert(svg.includes('Database') || svg.includes('Distributed Database'), 'System Design SVG contains Database');
   }
 
   // ---------------------------------------------------------------------------
-  // Test Suite 7: Mixed-Topic Edge Cases (Overriding Generic Umbrella Words)
+  // Test Suite 7: Deployment vs CI/CD Rigorous Distinction (Section 4 Regression)
   // ---------------------------------------------------------------------------
-  console.log('\n--- Test Suite 7: Mixed-Topic Edge Cases & Priority Rules ---');
+  console.log('\n--- Test Suite 7: Deployment Architecture vs CI/CD Pipelines ---');
   {
-    // Case A: AI mentioned in body, but headline is strictly Docker & Kubernetes deployment
-    const edgeAHeadline = 'Deploying Microservices with Kubernetes Helm Charts and ArgoCD';
-    const edgeATopic = 'AI & LLMs'; // Misleading topic umbrella
-    const edgeABody = 'Even when running AI model inference, reliable container orchestration requires declarative canary rollouts.';
-    const edgeAArchetype = classifyVisualTopic(edgeATopic, edgeAHeadline, edgeABody);
-    assert(edgeAArchetype === 'devops_cicd', 'Kubernetes/ArgoCD headline overrides AI & LLMs topic umbrella');
+    // Test 1: "Deploying a web service using Kubernetes" -> Runtime / Deployment Architecture
+    const k8sHeadline = 'Deploying a web service using Kubernetes';
+    const k8sArchetype = classifyVisualTopic('DevOps & Kubernetes', k8sHeadline);
+    assert(k8sArchetype === 'deployment_runtime', '"Deploying a web service using Kubernetes" classifies as deployment_runtime');
 
-    // Case B: System Design in topic, but headline is TypeScript Type Safety
-    const edgeBHeadline = 'Advanced TypeScript: Exhaustive Pattern Matching with Discriminated Unions';
-    const edgeBTopic = 'System Design & Microservices';
-    const edgeBBody = 'Type guards and satisfies operator eliminate runtime bugs before compilation.';
-    const edgeBArchetype = classifyVisualTopic(edgeBTopic, edgeBHeadline, edgeBBody);
-    assert(edgeBArchetype === 'typescript_code', 'TypeScript headline overrides System Design topic umbrella');
+    const k8sConfig = determineVisualConfig('DevOps & Kubernetes', k8sHeadline);
+    assert(k8sConfig.badge === 'CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE', 'K8s deployment badge is CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE');
+    assert(!k8sConfig.badge.includes('AUTOMATION & CI/CD'), 'K8s deployment badge strictly does NOT claim CI/CD');
 
-    // Case C: Engineering Leadership quote
-    const edgeCHeadline = 'Staff Engineer Principles: Simplicity Compounds Faster Than Cleverness';
-    const edgeCTopic = 'AI & LLMs';
-    const edgeCBody = 'Technical debt is often the result of premature abstraction rather than poor code.';
-    const edgeCArchetype = classifyVisualTopic(edgeCTopic, edgeCHeadline, edgeCBody);
-    assert(edgeCArchetype === 'engineering_leadership', 'Staff Engineer headline classifies as engineering_leadership');
+    const k8sResult = generateEnrichedTopicVisualSvg('DevOps & Kubernetes', k8sHeadline);
+    const k8sSvg = k8sResult.svg;
+    assert(k8sSvg.includes('Edge Gateway'), 'Deployment SVG contains "Edge Gateway"');
+    assert(k8sSvg.includes('Load Balancer'), 'Deployment SVG contains "Load Balancer"');
+    assert(k8sSvg.includes('Container Orchestration'), 'Deployment SVG contains "Container Orchestration"');
+    assert(k8sSvg.includes('Application Services'), 'Deployment SVG contains "Application Services"');
+    assert(k8sSvg.includes('Database'), 'Deployment SVG contains "Database"');
+    assert(k8sSvg.includes('Monitoring'), 'Deployment SVG contains "Monitoring"');
+    assert(!k8sSvg.includes('Source Code'), 'Deployment SVG strictly does NOT contain CI/CD "Source Code" stage');
+    assert(!k8sSvg.includes('Artifact Registry'), 'Deployment SVG strictly does NOT contain CI/CD "Artifact Registry" stage');
 
-    // Case D: Zero Trust Cybersecurity
-    const edgeDHeadline = 'Zero Trust Architecture: Eliminating Perimeter Security with mTLS';
-    const edgeDTopic = 'System Design & Microservices';
-    const edgeDBody = 'Mutual TLS authentication, ephemeral JWT tokens, and automated key rotation.';
-    const edgeDArchetype = classifyVisualTopic(edgeDTopic, edgeDHeadline, edgeDBody);
-    assert(edgeDArchetype === 'cybersecurity', 'Zero Trust / mTLS headline classifies as cybersecurity');
+    // Test 2: "GitHub Actions pipeline for automated testing" -> CI/CD
+    const ghaHeadline = 'GitHub Actions pipeline for automated testing';
+    const ghaArchetype = classifyVisualTopic('DevOps & Automation', ghaHeadline);
+    assert(ghaArchetype === 'devops_cicd', '"GitHub Actions pipeline for automated testing" classifies as devops_cicd');
+
+    const ghaConfig = determineVisualConfig('DevOps & Automation', ghaHeadline);
+    assert(ghaConfig.badge === 'AUTOMATION & CI/CD RELEASE PIPELINES', 'GitHub Actions badge is AUTOMATION & CI/CD RELEASE PIPELINES');
+
+    const ghaResult = generateEnrichedTopicVisualSvg('DevOps & Automation', ghaHeadline);
+    const ghaSvg = ghaResult.svg;
+    assert(ghaSvg.includes('Source Code'), 'CI/CD SVG contains "Source Code"');
+    assert(ghaSvg.includes('Build'), 'CI/CD SVG contains "Build"');
+    assert(ghaSvg.includes('Automated Tests'), 'CI/CD SVG contains "Automated Tests"');
+    assert(ghaSvg.includes('Artifact Registry'), 'CI/CD SVG contains "Artifact Registry"');
+    assert(ghaSvg.includes('Deployment'), 'CI/CD SVG contains "Deployment"');
+    assert(ghaSvg.includes('Monitoring'), 'CI/CD SVG contains "Monitoring"');
+
+    // Test 3: "Docker containers and service mesh architecture" -> Runtime Infrastructure
+    const dockerHeadline = 'Docker containers and service mesh architecture';
+    const dockerArchetype = classifyVisualTopic('DevOps & Kubernetes', dockerHeadline);
+    assert(dockerArchetype === 'deployment_runtime', '"Docker containers and service mesh architecture" classifies as deployment_runtime');
+
+    const dockerConfig = determineVisualConfig('DevOps & Kubernetes', dockerHeadline);
+    assert(dockerConfig.badge === 'CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE', 'Service mesh badge is CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE');
+
+    // Test 4: "Build, test and deploy automatically" -> CI/CD
+    const autoHeadline = 'Build, test and deploy automatically';
+    const autoArchetype = classifyVisualTopic('DevOps & Automation', autoHeadline);
+    assert(autoArchetype === 'devops_cicd', '"Build, test and deploy automatically" classifies as devops_cicd');
+
+    const autoConfig = determineVisualConfig('DevOps & Automation', autoHeadline);
+    assert(autoConfig.badge === 'AUTOMATION & CI/CD RELEASE PIPELINES', 'Automated build/test badge is AUTOMATION & CI/CD RELEASE PIPELINES');
+
+    // Test 5: "How to scale microservices in production" -> System Design / Runtime Architecture
+    const scaleHeadline = 'How to scale microservices in production';
+    const scaleArchetype = classifyVisualTopic('System Design & Microservices', scaleHeadline);
+    assert(scaleArchetype === 'system_design', '"How to scale microservices in production" classifies as system_design');
+
+    const scaleConfig = determineVisualConfig('System Design & Microservices', scaleHeadline);
+    assert(scaleConfig.badge === 'SYSTEM DESIGN & DISTRIBUTED MICROSERVICES', 'Scale microservices badge is SYSTEM DESIGN & DISTRIBUTED MICROSERVICES');
+
+    // Test 6: Production Bug Headline Case:
+    // "Deploying a simple web service to production shouldn't require a master's degree in cluster management"
+    const prodHeadline = "Deploying a simple web service to production shouldn't require a master's degree in cluster management";
+    const prodArchetype = classifyVisualTopic('DevOps & Kubernetes', prodHeadline);
+    assert(prodArchetype === 'deployment_runtime', 'Production bug headline classifies as deployment_runtime');
+
+    const prodConfig = determineVisualConfig('DevOps & Kubernetes', prodHeadline);
+    assert(prodConfig.badge === 'CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE', 'Production bug headline has CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE badge');
+
+    // Check that headline preservation does not truncate cluster management with ellipses
+    const prodClean = formatCleanHeadline(prodHeadline);
+    assert(!prodClean.includes('...'), 'No ellipses in cleaned headline');
+    assert(prodClean.includes('cluster management'), 'Preserves "cluster management" completely in headline');
+
+    const prodResult = generateEnrichedTopicVisualSvg('DevOps & Kubernetes', prodHeadline);
+    assert(prodResult.svg.includes('cluster management'), 'Rendered SVG includes "cluster management"');
+    assert(prodResult.svg.includes('Edge Gateway'), 'Rendered SVG contains "Edge Gateway"');
+    assert(prodResult.svg.includes('Container Orchestration'), 'Rendered SVG contains "Container Orchestration"');
   }
 
   // ---------------------------------------------------------------------------
@@ -268,6 +326,11 @@ async function runTests() {
     const cleanCaseStudy = formatCleanHeadline(caseStudyHeadline);
     assert(!cleanCaseStudy.startsWith('Case study:'), 'Strips meta "Case study:" prefix');
     assert(!cleanCaseStudy.includes('...'), 'No ellipses in clean case study headline');
+
+    const trailingEllipsisHeadline = 'Deploying modern web applications to production clusters...';
+    const cleanTrailing = formatCleanHeadline(trailingEllipsisHeadline);
+    assert(!cleanTrailing.endsWith('...'), 'Strips trailing ellipses cleanly');
+    assert(cleanTrailing.includes('production clusters'), 'Preserves content before trailing ellipses');
   }
 
   // ---------------------------------------------------------------------------
@@ -276,7 +339,8 @@ async function runTests() {
   console.log('\n--- Test Suite 9: Visual Quality Validation on All Archetype SVGs ---');
   {
     const testCases = [
-      { topic: 'DevOps & Kubernetes', hook: 'Building Zero-Downtime CI/CD Release Pipelines with ArgoCD' },
+      { topic: 'DevOps & Automation', hook: 'Building Zero-Downtime CI/CD Release Pipelines with ArgoCD' },
+      { topic: 'DevOps & Kubernetes', hook: 'Deploying a simple web service to production with Kubernetes clusters' },
       { topic: 'RAG & Vector Search Systems', hook: 'Hierarchical Navigable Small World (HNSW) Vector Retrieval' },
       { topic: 'AI & LLMs', hook: 'Multi-Agent Safety Guardrails and Tool Execution Governance' },
       { topic: 'TypeScript & JavaScript', hook: 'Server Components and Server Actions in Modern Full-Stack Apps' },

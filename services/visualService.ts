@@ -17,6 +17,7 @@ import { estimateTextWidth, validateVisualQuality } from './visualValidationServ
 
 export type TechnicalArchetype =
   | 'devops_cicd'
+  | 'deployment_runtime'
   | 'rag_retrieval'
   | 'ai_agents'
   | 'react_nextjs'
@@ -101,31 +102,32 @@ export function formatCleanHeadline(rawHeadline: string): string {
     clean = clean.replace(/[#⚡🤖📊🏗️🚀🧭🛡️💡💰]+/g, '').trim();
   }
 
-  // 3. Remove trailing period or exclamation
-  clean = clean.replace(/[.!]+$/, '').trim();
+  // 3. Remove trailing period, exclamation, or trailing ellipsis markers (... or …)
+  clean = clean.replace(/(\.{3}|…|[.!]+)$/, '').trim();
 
-  // 4. If headline is still long (> 68 chars) and contains a colon, em-dash, or spaced hyphen, split at clause
-  if (clean.length > 68 && (clean.includes(':') || clean.includes(' - ') || clean.includes(' — ') || clean.includes(' – '))) {
+  // 4. If headline is excessively long (> 125 chars) and contains a colon, em-dash, or spaced hyphen,
+  // split at natural clause boundary to preserve the core technical thesis.
+  if (clean.length > 125 && (clean.includes(':') || clean.includes(' - ') || clean.includes(' — ') || clean.includes(' – '))) {
     const parts = clean.split(/(?:\s*:\s*|\s+[—–-]\s+)/);
-    if (parts[0].length >= 24 && parts[0].length <= 80) {
+    if (parts[0].length >= 30 && parts[0].length <= 110) {
       clean = parts[0].trim();
-    } else if (parts[1] && parts[1].length >= 24 && parts[1].length <= 80) {
+    } else if (parts[1] && parts[1].length >= 30 && parts[1].length <= 110) {
       clean = parts[1].trim();
     }
   }
 
-  // 5. If still very long (> 92 chars), break cleanly at word boundary without ellipsis
-  if (clean.length > 92) {
+  // 5. If still very long (> 140 chars), break cleanly at word boundary without ellipsis
+  if (clean.length > 140) {
     const words = clean.split(/\s+/);
     let candidate = '';
     for (const word of words) {
-      if ((candidate + ' ' + word).trim().length <= 88) {
+      if ((candidate + ' ' + word).trim().length <= 130) {
         candidate = (candidate + ' ' + word).trim();
       } else {
         break;
       }
     }
-    if (candidate.length >= 20) {
+    if (candidate.length >= 24) {
       clean = candidate;
     }
   }
@@ -205,15 +207,34 @@ const ARCHETYPE_RULES: Record<TechnicalArchetype, KeywordRule[]> = {
   devops_cicd: [
     {
       terms: [
-        'ci/cd', 'cicd', 'pipeline', 'pipelines', 'continuous integration', 'continuous delivery',
-        'github actions', 'gitlab ci', 'docker', 'dockerfile', 'container', 'containers',
-        'kubernetes', 'k8s', 'helm', 'argocd', 'jenkins', 'canary rollout', 'canary deployment',
-        'blue-green', 'artifact registry', 'container registry', 'build pipeline', 'deploy pipeline',
-        'release pipeline', 'gitops', 'infrastructure as code', 'iac', 'terraform',
+        'ci/cd', 'cicd', 'continuous integration', 'continuous delivery',
+        'github actions', 'gitlab ci', 'jenkins', 'circleci',
+        'automated test', 'automated testing', 'test automation', 'testing pipeline',
+        'build pipeline', 'release pipeline', 'delivery pipeline', 'deploy pipeline',
+        'build, test', 'build and test', 'build, test and deploy', 'deploy automatically',
+        'automated build', 'automated builds', 'artifact registry', 'container registry',
+        'package registry', 'oci registry', 'gitops', 'release automation',
+        'canary rollout', 'blue-green', 'trunk-based',
       ],
-      weight: 12,
+      weight: 14,
     },
-    { terms: ['devops', 'cluster', 'deployment', 'staging env', 'preview env', 'production rollout'], weight: 5 },
+    { terms: ['pipeline', 'pipelines', 'pr gate', 'lint gate', 'automated regression testing'], weight: 6 },
+  ],
+
+  deployment_runtime: [
+    {
+      terms: [
+        'deploying a', 'deploying to', 'deploying services', 'deploying web', 'web service',
+        'simple web service', 'kubernetes', 'k8s', 'helm', 'helm chart', 'helm charts',
+        'pod', 'pods', 'node pool', 'node pools', 'cluster management', 'kubernetes cluster',
+        'cluster', 'clusters', 'container orchestration', 'docker container', 'docker containers',
+        'container architecture', 'service mesh architecture', 'service mesh', 'istio', 'envoy',
+        'runtime infrastructure', 'runtime architecture', 'deployment architecture', 'cloud infrastructure',
+        'infrastructure architecture', 'ingress controller', 'stateless container', 'production cluster',
+      ],
+      weight: 14,
+    },
+    { terms: ['deployment', 'containers', 'docker', 'hosting', 'microservice hosting', 'load balancer'], weight: 5 },
   ],
 
   rag_retrieval: [
@@ -273,11 +294,12 @@ const ARCHETYPE_RULES: Record<TechnicalArchetype, KeywordRule[]> = {
     {
       terms: [
         'microservice', 'microservices', 'kafka', 'rabbitmq', 'message broker', 'event streaming',
-        'event-driven', 'pub/sub', 'load balancer', 'sharding', 'database sharding',
-        'read replica', 'circuit breaker', 'service mesh', 'raft consensus', 'paxos',
+        'event-driven', 'pub/sub', 'database sharding', 'sharding',
+        'read replica', 'circuit breaker', 'raft consensus', 'paxos',
         'eventual consistency', 'cap theorem', 'fault domain', 'failure domain',
+        'scale microservices', 'scaling microservices', 'scale in production',
       ],
-      weight: 12,
+      weight: 14,
     },
     { terms: ['system design', 'distributed systems', 'scalability', 'horizontal scaling', 'throughput'], weight: 5 },
   ],
@@ -347,6 +369,7 @@ export function classifyVisualTopic(
 
   const scores: Record<TechnicalArchetype, number> = {
     devops_cicd: 0,
+    deployment_runtime: 0,
     rag_retrieval: 0,
     ai_agents: 0,
     react_nextjs: 0,
@@ -395,7 +418,8 @@ export function classifyVisualTopic(
     if (normTopic.includes('ai') || normTopic.includes('llm')) return 'ai_general';
     if (normTopic.includes('react') || normTopic.includes('next')) return 'react_nextjs';
     if (normTopic.includes('type')) return 'typescript_code';
-    if (normTopic.includes('devops') || normTopic.includes('docker')) return 'devops_cicd';
+    if (normTopic.includes('kubernetes') || normTopic.includes('cluster')) return 'deployment_runtime';
+    if (normTopic.includes('devops') || normTopic.includes('docker') || normTopic.includes('pipeline') || normTopic.includes('automation')) return 'devops_cicd';
     if (normTopic.includes('security')) return 'cybersecurity';
     if (normTopic.includes('lead') || normTopic.includes('career')) return 'engineering_leadership';
     if (normTopic.includes('backend') || normTopic.includes('api')) return 'backend_apis';
@@ -474,7 +498,7 @@ export function determineVisualConfig(
   const lastStyle = recentHistory[0]?.visualStyle;
 
   // 1. CI/CD & DevOps Pipeline Archetype
-  // Requirement 2: Source Code -> Build -> Automated Tests -> Artifact Registry -> Deployment -> Monitoring
+  // Requirement: Source Code -> Build -> Automated Tests -> Artifact Registry -> Deployment -> Monitoring
   if (archetype === 'devops_cicd') {
     return {
       badge: 'AUTOMATION & CI/CD RELEASE PIPELINES',
@@ -498,6 +522,35 @@ export function determineVisualConfig(
         'Automated verification gates prevent regressions from reaching production',
         'Canary rollouts verify real traffic health before full deployment promotion',
         'Immutable signed container images guarantee deployment parity across environments',
+      ],
+    };
+  }
+
+  // 1B. Runtime / Deployment Architecture Archetype
+  // Requirement: Edge Gateway -> Load Balancer -> Container Orchestration -> Application Services -> Database -> Monitoring
+  if (archetype === 'deployment_runtime') {
+    return {
+      badge: 'CLOUD INFRASTRUCTURE & DEPLOYMENT ARCHITECTURE',
+      title: cleanTitle,
+      archetype: 'deployment_runtime',
+      visualStyle: options?.style || 'isometric_tech',
+      visualTemplate: 'isometric_deployment_runtime',
+      category: 'isometric',
+      bgGrad: ['#040D1A', '#081D33'],
+      accentColor: '#38BDF8',
+      secondaryColor: '#818CF8',
+      nodes: [
+        { step: '01', title: 'Edge Gateway', subtitle: 'Anycast CDN & WAF', color: '#38BDF8', iconType: 'network' },
+        { step: '02', title: 'Load Balancer', subtitle: 'L4/L7 Ingress Controller', color: '#818CF8', iconType: 'cloud' },
+        { step: '03', title: 'Container Orchestration', subtitle: 'Kubernetes Control Plane', color: '#C084FC', iconType: 'tool' },
+        { step: '04', title: 'Application Services', subtitle: 'Stateless Container Fleet', color: '#38BDF8', iconType: 'code' },
+        { step: '05', title: 'Database', subtitle: 'Multi-Region Persistence', color: '#34D399', iconType: 'db' },
+        { step: '06', title: 'Monitoring', subtitle: 'Prometheus & Tracing', color: '#F59E0B', iconType: 'log' },
+      ],
+      takeaways: [
+        'Edge Gateways and Anycast Load Balancers terminate SSL and mitigate DDoS at scale',
+        'Container orchestration provides automated health checks, rolling updates, and self-healing',
+        'Separating stateless application pods from replicated databases ensures zero-downtime rollouts',
       ],
     };
   }
@@ -911,6 +964,164 @@ function renderModernEditorial(config: VisualConfig): string {
 }
 
 /**
+ * RUNTIME / DEPLOYMENT INFRASTRUCTURE ARCHITECTURE DIAGRAM
+ * Displays the 6 core runtime infrastructure components in a connected two-tier visual:
+ * Edge Gateway -> Load Balancer -> Container Orchestration -> Application Services -> Database -> Monitoring
+ */
+function renderDeploymentInfrastructure(_config: VisualConfig): string {
+  return `
+    <!-- Isometric Infrastructure Perspective Grid -->
+    <g opacity="0.18">
+      <line x1="70" y1="270" x2="1130" y2="270" stroke="#1E2D4A" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="70" y1="450" x2="1130" y2="450" stroke="#1E2D4A" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="235" y1="195" x2="235" y2="530" stroke="#1E2D4A" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="600" y1="195" x2="600" y2="530" stroke="#1E2D4A" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="965" y1="195" x2="965" y2="530" stroke="#1E2D4A" stroke-width="1" stroke-dasharray="4 4"/>
+    </g>
+
+    <!-- ==================== TIER 1: INGRESS & CONTROL PLANE ==================== -->
+    
+    <!-- Component 1: Edge Gateway -->
+    <g>
+      <rect x="73" y="198" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="70" y="195" width="330" height="155" rx="14" fill="#071326" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="70" y="195" width="330" height="4" rx="2" fill="#38BDF8"/>
+      
+      <!-- Tier Pill -->
+      <rect x="88" y="210" width="130" height="24" rx="12" fill="#030712" stroke="#38BDF8" stroke-width="1.2"/>
+      <text x="153" y="226" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#38BDF8" text-anchor="middle" letter-spacing="0.5">TIER 01: INGRESS</text>
+      ${renderSvgIcon('network', 360, 210, '#38BDF8')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="88" y="260" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Edge Gateway</text>
+      <text x="88" y="284" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#38BDF8">Anycast CDN &amp; WAF</text>
+      
+      <!-- Technical Details -->
+      <circle cx="94" cy="310" r="3.5" fill="#38BDF8"/>
+      <text x="106" y="314" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Global DNS &amp; SSL Termination</text>
+    </g>
+
+    <!-- Connector 1 -> 2: Anycast Routing Beam -->
+    <line x1="402" y1="272" x2="431" y2="272" stroke="#38BDF8" stroke-width="2.2" stroke-dasharray="4 3"/>
+    <polygon points="429,268 435,272 429,276" fill="#38BDF8"/>
+
+    <!-- Component 2: Load Balancer -->
+    <g>
+      <rect x="438" y="198" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="435" y="195" width="330" height="155" rx="14" fill="#09122C" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="435" y="195" width="330" height="4" rx="2" fill="#818CF8"/>
+      
+      <!-- Tier Pill -->
+      <rect x="453" y="210" width="135" height="24" rx="12" fill="#030712" stroke="#818CF8" stroke-width="1.2"/>
+      <text x="520" y="226" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#818CF8" text-anchor="middle" letter-spacing="0.5">TIER 02: ROUTING</text>
+      ${renderSvgIcon('cloud', 725, 210, '#818CF8')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="453" y="260" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Load Balancer</text>
+      <text x="453" y="284" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#818CF8">L4/L7 Ingress Controller</text>
+      
+      <!-- Technical Details -->
+      <circle cx="459" cy="310" r="3.5" fill="#818CF8"/>
+      <text x="471" y="314" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Path Routing &amp; Health Probing</text>
+    </g>
+
+    <!-- Connector 2 -> 3: Cluster Ingress Beam -->
+    <line x1="767" y1="272" x2="796" y2="272" stroke="#818CF8" stroke-width="2.2" stroke-dasharray="4 3"/>
+    <polygon points="794,268 800,272 794,276" fill="#818CF8"/>
+
+    <!-- Component 3: Container Orchestration -->
+    <g>
+      <rect x="803" y="198" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="800" y="195" width="330" height="155" rx="14" fill="#110E26" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="800" y="195" width="330" height="4" rx="2" fill="#C084FC"/>
+      
+      <!-- Tier Pill -->
+      <rect x="818" y="210" width="135" height="24" rx="12" fill="#030712" stroke="#C084FC" stroke-width="1.2"/>
+      <text x="885" y="226" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#C084FC" text-anchor="middle" letter-spacing="0.5">TIER 03: CLUSTER</text>
+      ${renderSvgIcon('tool', 1090, 210, '#C084FC')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="818" y="260" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Container Orchestration</text>
+      <text x="818" y="284" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#C084FC">Kubernetes Control Plane</text>
+      
+      <!-- Technical Details -->
+      <circle cx="824" cy="310" r="3.5" fill="#C084FC"/>
+      <text x="836" y="314" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Pod Scheduling &amp; Self-Healing</text>
+    </g>
+
+    <!-- ==================== TIER 2: COMPUTE, STORAGE & MONITORING ==================== -->
+
+    <!-- Component 4: Application Services -->
+    <g>
+      <rect x="73" y="378" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="70" y="375" width="330" height="155" rx="14" fill="#071326" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="70" y="375" width="330" height="4" rx="2" fill="#38BDF8"/>
+      
+      <!-- Tier Pill -->
+      <rect x="88" y="390" width="140" height="24" rx="12" fill="#030712" stroke="#38BDF8" stroke-width="1.2"/>
+      <text x="158" y="406" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#38BDF8" text-anchor="middle" letter-spacing="0.5">TIER 04: COMPUTE</text>
+      ${renderSvgIcon('code', 360, 390, '#38BDF8')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="88" y="440" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Application Services</text>
+      <text x="88" y="464" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#38BDF8">Stateless Container Fleet</text>
+      
+      <!-- Technical Details -->
+      <circle cx="94" cy="490" r="3.5" fill="#38BDF8"/>
+      <text x="106" y="494" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Isolated Microservice Replicas</text>
+    </g>
+
+    <!-- Connector 4 -> 5: Service to DB Persistence Beam -->
+    <line x1="402" y1="452" x2="431" y2="452" stroke="#34D399" stroke-width="2.2" stroke-dasharray="4 3"/>
+    <polygon points="429,448 435,452 429,456" fill="#34D399"/>
+
+    <!-- Component 5: Database -->
+    <g>
+      <rect x="438" y="378" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="435" y="375" width="330" height="155" rx="14" fill="#06181F" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="435" y="375" width="330" height="4" rx="2" fill="#34D399"/>
+      
+      <!-- Tier Pill -->
+      <rect x="453" y="390" width="140" height="24" rx="12" fill="#030712" stroke="#34D399" stroke-width="1.2"/>
+      <text x="523" y="406" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#34D399" text-anchor="middle" letter-spacing="0.5">TIER 05: STORAGE</text>
+      ${renderSvgIcon('db', 725, 390, '#34D399')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="453" y="440" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Database</text>
+      <text x="453" y="464" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#34D399">Multi-Region Persistence</text>
+      
+      <!-- Technical Details -->
+      <circle cx="459" cy="490" r="3.5" fill="#34D399"/>
+      <text x="471" y="494" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">ACID Replicated Storage Engine</text>
+    </g>
+
+    <!-- Connector 5 -> 6: Telemetry Trace Beam -->
+    <line x1="767" y1="452" x2="796" y2="452" stroke="#F59E0B" stroke-width="2.2" stroke-dasharray="4 3"/>
+    <polygon points="794,448 800,452 794,456" fill="#F59E0B"/>
+
+    <!-- Component 6: Monitoring -->
+    <g>
+      <rect x="803" y="378" width="330" height="155" rx="14" fill="#000000" opacity="0.45"/>
+      <rect x="800" y="375" width="330" height="155" rx="14" fill="#1A1208" stroke="#1E2B4D" stroke-width="1.8"/>
+      <rect x="800" y="375" width="330" height="4" rx="2" fill="#F59E0B"/>
+      
+      <!-- Tier Pill -->
+      <rect x="818" y="390" width="155" height="24" rx="12" fill="#030712" stroke="#F59E0B" stroke-width="1.2"/>
+      <text x="895" y="406" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="#F59E0B" text-anchor="middle" letter-spacing="0.5">TIER 06: TELEMETRY</text>
+      ${renderSvgIcon('log', 1090, 390, '#F59E0B')}
+
+      <!-- Component Title & Subtitle -->
+      <text x="818" y="440" font-family="Inter, sans-serif" font-size="17" font-weight="800" fill="#F8FAFC">Monitoring</text>
+      <text x="818" y="464" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F59E0B">Observability &amp; Tracing</text>
+      
+      <!-- Technical Details -->
+      <circle cx="824" cy="490" r="3.5" fill="#F59E0B"/>
+      <text x="836" y="494" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Prometheus Metrics &amp; Alarms</text>
+    </g>
+  `;
+}
+
+/**
  * STYLE C: ISOMETRIC TECHNICAL ILLUSTRATION
  * 3D isometric architecture diagrams with multi-tiered servers, databases, and connected data flows.
  */
@@ -1315,9 +1526,39 @@ export function generateEnrichedTopicVisualSvg(
   options?: VisualEngineOptions
 ): { svg: string; visualStyle: VisualStyle; visualTemplate: string; archetype: TechnicalArchetype } {
   const config = determineVisualConfig(topic, hookTitle, postBody, options);
-  const titleLines = wrapTextToWidth(config.title, 1050, 44, 2);
-  const titleStartY = titleLines.length === 1 ? 132 : 114;
-  const titleLineHeight = 52;
+
+  // Content-Aware Headline Layout Engine: Fits 1 to 3 readable lines cleanly
+  // Prevents awkward mid-thought truncation and increases available width to 1060px.
+  const maxTitleWidth = 1060;
+  const linesAt40 = wrapTextToWidth(config.title, maxTitleWidth, 40, 2);
+  const wordsIn40 = linesAt40.join(' ').trim().split(/\s+/).filter(Boolean);
+  const totalWords = config.title.trim().split(/\s+/).filter(Boolean);
+  const fitsIn2 = linesAt40.length <= 2 && wordsIn40.length === totalWords.length;
+
+  let titleLines: string[];
+  let titleFontSize: number;
+  let titleLineHeight: number;
+  let titleStartY: number;
+
+  if (fitsIn2) {
+    if (linesAt40.length === 1) {
+      titleLines = linesAt40;
+      titleFontSize = 42;
+      titleLineHeight = 48;
+      titleStartY = 132;
+    } else {
+      titleLines = linesAt40;
+      titleFontSize = 38;
+      titleLineHeight = 44;
+      titleStartY = 114;
+    }
+  } else {
+    // 3 readable lines for longer headlines
+    titleLines = wrapTextToWidth(config.title, maxTitleWidth, 30, 3);
+    titleFontSize = 30;
+    titleLineHeight = 38;
+    titleStartY = 96;
+  }
 
   let diagramBodySvg = '';
 
@@ -1329,6 +1570,8 @@ export function generateEnrichedTopicVisualSvg(
     case 'isometric_tech':
       if (config.archetype === 'devops_cicd') {
         diagramBodySvg = renderUniversalPipeline(config);
+      } else if (config.archetype === 'deployment_runtime') {
+        diagramBodySvg = renderDeploymentInfrastructure(config);
       } else {
         diagramBodySvg = renderIsometricTech(config);
       }
@@ -1357,7 +1600,7 @@ export function generateEnrichedTopicVisualSvg(
   }
 
   const titleSvg = titleLines.map((line, idx) => `
-    <text x="70" y="${titleStartY + idx * titleLineHeight}" font-family="Inter, sans-serif" font-size="44" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">${escapeXml(line)}</text>
+    <text x="70" y="${titleStartY + idx * titleLineHeight}" font-family="Inter, sans-serif" font-size="${titleFontSize}" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">${escapeXml(line)}</text>
   `).join('\n');
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">

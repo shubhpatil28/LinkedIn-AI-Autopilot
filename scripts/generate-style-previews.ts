@@ -85,6 +85,14 @@ const SAMPLE_TOPICS: TopicSample[] = [
     expectedStyle: 'modern_editorial',
     targetCategory: 'Engineering / Career',
   },
+  {
+    id: '09_runtime_deployment',
+    topic: 'Cloud Infrastructure & Kubernetes',
+    hook: "Deploying a simple web service to production shouldn't require a master's degree in cluster management.",
+    body: 'Modern cloud deployments should be predictable, resilient, and simple to operate.\n\nKey architecture components:\n1. Edge Gateway & Ingress\n2. High-availability Load Balancer\n3. Container Orchestration & Pod scheduling\n4. Application Microservices\n5. Distributed ACID Database\n6. Real-time Telemetry & Monitoring.',
+    expectedStyle: 'isometric_tech',
+    targetCategory: 'Cloud Infrastructure / Runtime Deployment',
+  },
 ];
 
 async function main() {
