@@ -1,18 +1,31 @@
 /**
- * Visual Generation Engine 3.0
+ * Visual Generation Engine 3.0 — Content-to-Visual Intelligence Edition
  * Produces 1200x630 topic-aware, high-contrast, visually distinctive graphics using pure SVG.
  * Strictly avoids foreignObject for 100% reliable resvg/PNG conversion.
  * 
- * Features Visual Engine 3.0:
- *  - Enforces strict typography hierarchy: 44px headlines, >= 14px minimum readable labels.
- *  - Dynamic text measurement (estimateTextWidth) and line wrapping (wrapTextToWidth).
- *  - Eliminates fabricated metrics (no arbitrary percentages or fake latency numbers).
- *  - Automated visual quality validation (AABB collision detection, canvas bounds checking).
- *  - 6 Content-Aware Visual Compositions across 8 technical topic domains.
+ * Features:
+ *  - Content-Aware Topic Classification with weighted scoring and priority rules.
+ *  - Semantic coherence: Badge, headline, visual archetype, and diagram components 100% aligned.
+ *  - Bespoke component flows for CI/CD, RAG, AI Agents, React/Next.js, Backend, and System Design.
+ *  - Concise, punchy headline formatting with zero awkward ellipses.
+ *  - Strictly zero fabricated metrics (no arbitrary percentages or fake latencies).
+ *  - Automated visual quality validation (AABB collision detection, canvas boundary guard, min 14px font).
  */
 
 import { VisualStyle } from '@/types';
 import { estimateTextWidth, validateVisualQuality } from './visualValidationService';
+
+export type TechnicalArchetype =
+  | 'devops_cicd'
+  | 'rag_retrieval'
+  | 'ai_agents'
+  | 'react_nextjs'
+  | 'backend_apis'
+  | 'system_design'
+  | 'typescript_code'
+  | 'cybersecurity'
+  | 'engineering_leadership'
+  | 'ai_general';
 
 export interface VisualNode {
   step: string;
@@ -33,6 +46,7 @@ export interface MetricCard {
 export interface VisualConfig {
   badge: string;
   title: string;
+  archetype: TechnicalArchetype;
   visualStyle: VisualStyle;
   visualTemplate: string;
   category: 'ai_safety' | 'workflow' | 'code' | 'debug' | 'pipeline' | 'isometric' | 'editorial' | 'data_vis';
@@ -64,6 +78,62 @@ export function escapeXml(unsafe: string): string {
 }
 
 /**
+ * Formats a clean, concise headline for visual banner presentation.
+ * Strips emoji clutter, meta framing (e.g. "System design perspective: "), and
+ * avoids awkward mid-sentence ellipses.
+ */
+export function formatCleanHeadline(rawHeadline: string): string {
+  if (!rawHeadline) return 'Engineering Architecture & System Design';
+
+  let clean = rawHeadline.trim();
+
+  // 1. Remove meta prefixes that distract from the core technical topic
+  const metaPrefixRegex = /^(system design perspective|engineering perspective|architectural perspective|production lessons|tech deep dive|deep dive|in-depth guide|quick tip|pro tip|case study)\s*[:|-]\s*/i;
+  while (metaPrefixRegex.test(clean)) {
+    clean = clean.replace(metaPrefixRegex, '').trim();
+  }
+
+  // 2. Strip emojis, symbols, and formatting artifacts
+  try {
+    const emojiRegex = new RegExp('[\\p{Extended_Pictographic}\\p{Emoji}#⚡🤖📊🏗️🚀🧭🛡️💡💰]+', 'gu');
+    clean = clean.replace(emojiRegex, '').trim();
+  } catch {
+    clean = clean.replace(/[#⚡🤖📊🏗️🚀🧭🛡️💡💰]+/g, '').trim();
+  }
+
+  // 3. Remove trailing period or exclamation
+  clean = clean.replace(/[.!]+$/, '').trim();
+
+  // 4. If headline is still long (> 68 chars) and contains a colon, em-dash, or spaced hyphen, split at clause
+  if (clean.length > 68 && (clean.includes(':') || clean.includes(' - ') || clean.includes(' — ') || clean.includes(' – '))) {
+    const parts = clean.split(/(?:\s*:\s*|\s+[—–-]\s+)/);
+    if (parts[0].length >= 24 && parts[0].length <= 80) {
+      clean = parts[0].trim();
+    } else if (parts[1] && parts[1].length >= 24 && parts[1].length <= 80) {
+      clean = parts[1].trim();
+    }
+  }
+
+  // 5. If still very long (> 92 chars), break cleanly at word boundary without ellipsis
+  if (clean.length > 92) {
+    const words = clean.split(/\s+/);
+    let candidate = '';
+    for (const word of words) {
+      if ((candidate + ' ' + word).trim().length <= 88) {
+        candidate = (candidate + ' ' + word).trim();
+      } else {
+        break;
+      }
+    }
+    if (candidate.length >= 20) {
+      clean = candidate;
+    }
+  }
+
+  return clean;
+}
+
+/**
  * Splits text into wrapped lines bounded by pixel width rather than character count,
  * guaranteeing zero container overflow.
  */
@@ -92,13 +162,13 @@ export function wrapTextToWidth(
         lines.push(currentLine);
       }
       if (lines.length === maxLines - 1) {
+        // Last line: append words that fit cleanly without forcing awkward ellipsis
         let lastLine = word;
         for (let j = i + 1; j < words.length; j++) {
           const nextCandidate = `${lastLine} ${words[j]}`;
-          if (estimateTextWidth(nextCandidate + '...', fontSize, isMonospace) <= maxWidth) {
+          if (estimateTextWidth(nextCandidate, fontSize, isMonospace) <= maxWidth) {
             lastLine = nextCandidate;
           } else {
-            lastLine += '...';
             break;
           }
         }
@@ -121,6 +191,218 @@ export function wrapTextToWidth(
  */
 export function wrapText(text: string, maxCharsPerLine: number = 46, maxLines: number = 2): string[] {
   return wrapTextToWidth(text, maxCharsPerLine * 22, 44, maxLines);
+}
+
+/**
+ * Weighted Keyword Rule for Topic Classification
+ */
+interface KeywordRule {
+  terms: string[];
+  weight: number;
+}
+
+const ARCHETYPE_RULES: Record<TechnicalArchetype, KeywordRule[]> = {
+  devops_cicd: [
+    {
+      terms: [
+        'ci/cd', 'cicd', 'pipeline', 'pipelines', 'continuous integration', 'continuous delivery',
+        'github actions', 'gitlab ci', 'docker', 'dockerfile', 'container', 'containers',
+        'kubernetes', 'k8s', 'helm', 'argocd', 'jenkins', 'canary rollout', 'canary deployment',
+        'blue-green', 'artifact registry', 'container registry', 'build pipeline', 'deploy pipeline',
+        'release pipeline', 'gitops', 'infrastructure as code', 'iac', 'terraform',
+      ],
+      weight: 12,
+    },
+    { terms: ['devops', 'cluster', 'deployment', 'staging env', 'preview env', 'production rollout'], weight: 5 },
+  ],
+
+  rag_retrieval: [
+    {
+      terms: [
+        'rag', 'retrieval-augmented', 'retrieval augmented', 'vector search', 'vector db',
+        'vector database', 'embedding', 'embeddings', 'hnsw', 'pinecone', 'qdrant', 'milvus',
+        'chromadb', 'weaviate', 'cross-encoder', 'rerank', 'reranker', 'dense retrieval',
+        'semantic search', 'chunking', 'hybrid search', 'bm25',
+      ],
+      weight: 12,
+    },
+    { terms: ['retrieval', 'vector space', 'document chunking', 'semantic similarity', 'cosine similarity'], weight: 5 },
+  ],
+
+  ai_agents: [
+    {
+      terms: [
+        'ai agent', 'ai agents', 'autonomous agent', 'autonomous agents', 'agentic', 'multi-agent',
+        'react loop', 'tool calling', 'function calling', 'agent orchestrator', 'agent loop',
+        'langchain', 'langgraph', 'crewai', 'autogen', 'model context protocol', 'mcp server',
+        'tool execution', 'unconstrained tools', 'human-in-the-loop', 'safety guardrails',
+        'guardrail', 'guardrails', 'prompt injection',
+      ],
+      weight: 12,
+    },
+    { terms: ['agent workflow', 'tool dispatch', 'reasoning loop', 'step bound', 'autonomous loop'], weight: 5 },
+  ],
+
+  react_nextjs: [
+    {
+      terms: [
+        'react', 'next.js', 'nextjs', 'server component', 'server components', 'rsc',
+        'server action', 'server actions', 'app router', 'useoptimistic', 'usememo',
+        'usecallback', 'usestate', 'usereducer', 'client component', 'react compiler',
+        'hydration', 'zustand', 'tanstack',
+      ],
+      weight: 12,
+    },
+    { terms: ['frontend architecture', 'ui state', 'client bundle', 'virtual dom', 'frontend'], weight: 5 },
+  ],
+
+  backend_apis: [
+    {
+      terms: [
+        'idempotent', 'idempotency', 'api gateway', 'redis lock', 'distributed lock', 'redlock',
+        'acid transaction', 'database transaction', 'postgres', 'postgresql', 'mysql',
+        'write-ahead log', 'wal', 'two-phase commit', 'rate limiter', 'deduplication ttl',
+        'graphql', 'grpc', 'connection pool',
+      ],
+      weight: 12,
+    },
+    { terms: ['backend', 'rest api', 'api request', 'database', 'transaction', 'caching layer'], weight: 4 },
+  ],
+
+  system_design: [
+    {
+      terms: [
+        'microservice', 'microservices', 'kafka', 'rabbitmq', 'message broker', 'event streaming',
+        'event-driven', 'pub/sub', 'load balancer', 'sharding', 'database sharding',
+        'read replica', 'circuit breaker', 'service mesh', 'raft consensus', 'paxos',
+        'eventual consistency', 'cap theorem', 'fault domain', 'failure domain',
+      ],
+      weight: 12,
+    },
+    { terms: ['system design', 'distributed systems', 'scalability', 'horizontal scaling', 'throughput'], weight: 5 },
+  ],
+
+  typescript_code: [
+    {
+      terms: [
+        'typescript', 'type safety', 'type guard', 'discriminated union', 'type narrowing',
+        'brand type', 'satisfies operator', 'generic type', 'generics', 'utility types',
+        'type system', 'type-level', 'type-safe',
+      ],
+      weight: 12,
+    },
+    { terms: ['strict types', 'static typing', 'clean code', 'refactoring', 'code quality'], weight: 4 },
+  ],
+
+  cybersecurity: [
+    {
+      terms: [
+        'zero-trust', 'zero trust', 'mtls', 'jwt', 'oauth', 'waf', 'penetration testing',
+        'cryptographic', 'vulnerability', 'cve', 'sql injection', 'xss', 'csrf',
+        'threat interception', 'identity attestation', 'security vault', 'audit vault',
+      ],
+      weight: 12,
+    },
+    { terms: ['cybersecurity', 'security', 'authentication', 'authorization', 'audit trail'], weight: 4 },
+  ],
+
+  engineering_leadership: [
+    {
+      terms: [
+        'staff engineer', 'engineering leadership', 'principal engineer', 'architectural tradeoffs',
+        'architectural tradeoff', 'mttr', 'mean-time-to-recovery', 'technical debt', 'tech debt',
+        'engineering culture', 'engineering axioms', 'software craft', 'debugging', 'diagnostics',
+        'root cause', 'post-mortem', 'incident analysis',
+      ],
+      weight: 12,
+    },
+    { terms: ['engineering excellence', 'simplicity in design', 'boring technology', 'senior engineer', 'debugging & architecture'], weight: 5 },
+  ],
+
+  ai_general: [
+    {
+      terms: [
+        'llm', 'large language model', 'foundation model', 'gpt-4', 'claude', 'gemini',
+        'prompt engineering', 'context window', 'token limit', 'fine-tuning', 'hallucination',
+      ],
+      weight: 8,
+    },
+    { terms: ['artificial intelligence', 'ai & llms', 'model evaluation', 'neural network'], weight: 3 },
+  ],
+};
+
+/**
+ * Classifies post content into the optimal TechnicalArchetype using weighted scoring.
+ * Headline receives 5x weight, topic receives 3x weight, and post body receives 1x weight.
+ * Highly specific technical terms strictly outscore umbrella terms (AI, system, architecture).
+ */
+export function classifyVisualTopic(
+  topic: string,
+  hookTitle?: string,
+  postBody?: string
+): TechnicalArchetype {
+  const normTopic = (topic || '').toLowerCase();
+  const normHook = (hookTitle || '').toLowerCase();
+  const normBody = (postBody || '').toLowerCase();
+
+  const scores: Record<TechnicalArchetype, number> = {
+    devops_cicd: 0,
+    rag_retrieval: 0,
+    ai_agents: 0,
+    react_nextjs: 0,
+    backend_apis: 0,
+    system_design: 0,
+    typescript_code: 0,
+    cybersecurity: 0,
+    engineering_leadership: 0,
+    ai_general: 0,
+  };
+
+  for (const [archetypeKey, ruleList] of Object.entries(ARCHETYPE_RULES)) {
+    const archetype = archetypeKey as TechnicalArchetype;
+    for (const rule of ruleList) {
+      for (const term of rule.terms) {
+        // Headline matches receive 5x priority
+        if (normHook.includes(term)) {
+          scores[archetype] += rule.weight * 5;
+        }
+        // Topic parameter matches receive 3x priority
+        if (normTopic.includes(term)) {
+          scores[archetype] += rule.weight * 3;
+        }
+        // Body matches receive 1x priority
+        if (normBody.includes(term)) {
+          scores[archetype] += rule.weight * 1;
+        }
+      }
+    }
+  }
+
+  // Find archetype with the highest score
+  let maxScore = -1;
+  let winningArchetype: TechnicalArchetype = 'system_design';
+
+  for (const [archetypeKey, score] of Object.entries(scores)) {
+    const archetype = archetypeKey as TechnicalArchetype;
+    if (score > maxScore) {
+      maxScore = score;
+      winningArchetype = archetype;
+    }
+  }
+
+  // Fallback: If no specific scores were triggered, infer from general topic
+  if (maxScore <= 0) {
+    if (normTopic.includes('ai') || normTopic.includes('llm')) return 'ai_general';
+    if (normTopic.includes('react') || normTopic.includes('next')) return 'react_nextjs';
+    if (normTopic.includes('type')) return 'typescript_code';
+    if (normTopic.includes('devops') || normTopic.includes('docker')) return 'devops_cicd';
+    if (normTopic.includes('security')) return 'cybersecurity';
+    if (normTopic.includes('lead') || normTopic.includes('career')) return 'engineering_leadership';
+    if (normTopic.includes('backend') || normTopic.includes('api')) return 'backend_apis';
+    return 'system_design';
+  }
+
+  return winningArchetype;
 }
 
 /**
@@ -175,8 +457,8 @@ export function renderSvgIcon(type: string, x: number, y: number, color: string)
 }
 
 /**
- * Maps topic, hook, and context to the optimal visual style and template,
- * taking recent visual history into account to prevent consecutive repeats.
+ * Maps topic, hook, and context to the optimal visual config using weighted scoring.
+ * Guarantees that Badge, Headline, Visual Archetype, and Diagram Nodes agree 100%.
  */
 export function determineVisualConfig(
   topic: string,
@@ -185,106 +467,198 @@ export function determineVisualConfig(
   options?: VisualEngineOptions
 ): VisualConfig {
   const normTopic = (topic || '').toLowerCase();
-  const textContent = `${normTopic} ${(hookTitle || '')} ${(postBody || '')}`.toLowerCase();
+  const normHook = (hookTitle || '').toLowerCase();
+  const archetype = classifyVisualTopic(topic, hookTitle, postBody);
+  const cleanTitle = formatCleanHeadline(hookTitle || topic);
   const recentHistory = options?.recentHistory || [];
   const lastStyle = recentHistory[0]?.visualStyle;
 
-  // 1. AI Safety / Agent Governance Specialization (Priority Contract for Test 10)
-  if (
-    textContent.includes('safety') ||
-    textContent.includes('guardrail') ||
-    textContent.includes('unconstrained') ||
-    textContent.includes('human-in-the-loop') ||
-    (normTopic.includes('ai') && textContent.includes('agent') && !options?.style)
-  ) {
+  // 1. CI/CD & DevOps Pipeline Archetype
+  // Requirement 2: Source Code -> Build -> Automated Tests -> Artifact Registry -> Deployment -> Monitoring
+  if (archetype === 'devops_cicd') {
+    return {
+      badge: 'AUTOMATION & CI/CD RELEASE PIPELINES',
+      title: cleanTitle,
+      archetype: 'devops_cicd',
+      visualStyle: options?.style || 'isometric_tech',
+      visualTemplate: 'cicd_six_stage_pipeline',
+      category: 'pipeline',
+      bgGrad: ['#040D17', '#082329'],
+      accentColor: '#34D399',
+      secondaryColor: '#38BDF8',
+      nodes: [
+        { step: '01', title: 'Source Code', subtitle: 'PR Gate & Lint', color: '#38BDF8', iconType: 'code' },
+        { step: '02', title: 'Build', subtitle: 'Hermetic Image', color: '#818CF8', iconType: 'tool' },
+        { step: '03', title: 'Automated Tests', subtitle: 'Unit & Integration', color: '#C084FC', iconType: 'check' },
+        { step: '04', title: 'Artifact Registry', subtitle: 'Signed OCI Image', color: '#F43F5E', iconType: 'cloud' },
+        { step: '05', title: 'Deployment', subtitle: 'Canary Rollout', color: '#F59E0B', iconType: 'network' },
+        { step: '06', title: 'Monitoring', subtitle: 'Auto-Rollback Gate', color: '#34D399', iconType: 'log' },
+      ],
+      takeaways: [
+        'Automated verification gates prevent regressions from reaching production',
+        'Canary rollouts verify real traffic health before full deployment promotion',
+        'Immutable signed container images guarantee deployment parity across environments',
+      ],
+    };
+  }
+
+  // 2. RAG & Vector Retrieval Archetype
+  // Requirement 2: Document Ingestion -> Chunking -> Embeddings -> Vector Search -> Reranking -> Context Generation
+  if (archetype === 'rag_retrieval') {
+    return {
+      badge: 'RAG & HIGH-DIMENSIONAL VECTOR ARCHITECTURE',
+      title: cleanTitle,
+      archetype: 'rag_retrieval',
+      visualStyle: options?.style || (lastStyle === 'data_visualization' ? 'premium_3d' : 'data_visualization'),
+      visualTemplate: 'rag_six_stage_pipeline',
+      category: 'data_vis',
+      bgGrad: ['#04091A', '#0C1B3A'],
+      accentColor: '#38BDF8',
+      secondaryColor: '#818CF8',
+      nodes: [
+        { step: '01', title: 'Document Ingestion', subtitle: 'Semantic Caching', color: '#38BDF8', iconType: 'log' },
+        { step: '02', title: 'Chunking', subtitle: 'Semantic Splitting', color: '#818CF8', iconType: 'tool' },
+        { step: '03', title: 'Embeddings', subtitle: 'Dense Vectors', color: '#C084FC', iconType: 'network' },
+        { step: '04', title: 'Vector Search', subtitle: 'HNSW Vector Index', color: '#34D399', iconType: 'db' },
+        { step: '05', title: 'Reranking', subtitle: 'Hybrid Reranker', color: '#F59E0B', iconType: 'sparkle' },
+        { step: '06', title: 'Context Generation', subtitle: 'Grounded Packing', color: '#38BDF8', iconType: 'brain' },
+      ],
+      metrics: [
+        { value: 'STAGE 01', label: 'Semantic Caching', subtext: 'Exact & Dense Embedding Cache', color: '#38BDF8' },
+        { value: 'STAGE 02', label: 'HNSW Vector Index', subtext: 'Hierarchical Navigable Graph', color: '#818CF8' },
+        { value: 'STAGE 03', label: 'Hybrid Reranker', subtext: 'Cross-Encoder Reciprocal Rank', color: '#34D399' },
+      ],
+      takeaways: [
+        'Semantic Caching prevents redundant embeddings and expensive LLM calls',
+        'HNSW Vector Index enables sub-millisecond approximate nearest neighbor retrieval',
+        'Hybrid Reranker combines cross-encoder reranking with reciprocal rank fusion',
+      ],
+    };
+  }
+
+  // 3. AI Agents & Orchestration Archetype
+  // Requirement 2: User Request -> Planner -> Tool Execution -> Guardrails -> Audit
+  if (archetype === 'ai_agents') {
     return {
       badge: 'AI AGENT ARCHITECTURE & SAFETY CONTROLS',
-      title: hookTitle || 'Production AI Agent Safety & Guardrail Pipeline',
-      visualStyle: 'futuristic_ai',
+      title: cleanTitle,
+      archetype: 'ai_agents',
+      visualStyle: options?.style || 'futuristic_ai',
       visualTemplate: 'ai_safety_governance',
       category: 'ai_safety',
       bgGrad: ['#040817', '#0A1329'],
       accentColor: '#38BDF8',
       secondaryColor: '#EF4444',
-      takeaways: [
-        'Deterministic bounds on tool executions and step loops',
-        'Human-in-the-loop triggers for high-impact mutations',
-        'Immutable audit logs for observability & traceability',
-      ],
-    };
-  }
-
-  // If style is explicitly requested, honor it
-  if (options?.style) {
-    return createConfigForExplicitStyle(options.style, topic, hookTitle, textContent);
-  }
-
-  // 2. AI / LLM / Vector Search / RAG / MCP
-  if (
-    normTopic.includes('ai') ||
-    normTopic.includes('llm') ||
-    normTopic.includes('gpt') ||
-    normTopic.includes('model') ||
-    normTopic.includes('rag') ||
-    normTopic.includes('vector') ||
-    normTopic.includes('mcp')
-  ) {
-    // Check RAG & Vector Space
-    if (textContent.includes('rag') || textContent.includes('vector') || textContent.includes('embedding') || textContent.includes('retrieval')) {
-      const candidateStyle: VisualStyle = lastStyle === 'data_visualization' ? 'premium_3d' : 'data_visualization';
-      return {
-        badge: 'RAG & HIGH-DIMENSIONAL VECTOR ARCHITECTURE',
-        title: hookTitle || 'Enterprise RAG Retrieval & Vector Pipeline',
-        visualStyle: candidateStyle,
-        visualTemplate: 'vector_rag_pipeline',
-        category: 'data_vis',
-        bgGrad: ['#04091A', '#0C1B3A'],
-        accentColor: '#38BDF8',
-        secondaryColor: '#818CF8',
-        metrics: [
-          { value: 'STAGE 01', label: 'Semantic Caching', subtext: 'Exact & Dense Embedding Cache', color: '#38BDF8' },
-          { value: 'STAGE 02', label: 'HNSW Vector Index', subtext: 'Hierarchical Navigable Graph', color: '#818CF8' },
-          { value: 'STAGE 03', label: 'Hybrid Reranker', subtext: 'Cross-Encoder Reciprocal Rank', color: '#34D399' },
-        ],
-        takeaways: [
-          'Semantic caching prevents redundant expensive LLM calls',
-          'Hybrid search combines semantic dense vectors with lexical exact tokens',
-          'Strict JSON schema validation eliminates downstream deserialization crashes',
-        ],
-      };
-    }
-
-    // Futuristic AI Neural Visual
-    const candidateStyle: VisualStyle = lastStyle === 'futuristic_ai' ? 'premium_3d' : 'futuristic_ai';
-    return {
-      badge: 'ARTIFICIAL INTELLIGENCE & LLM SYSTEMS',
-      title: hookTitle || 'Production AI Agent & LLM Architecture',
-      visualStyle: candidateStyle,
-      visualTemplate: 'neural_agent_cluster',
-      category: 'workflow',
-      bgGrad: ['#020617', '#09132E'],
-      accentColor: '#38BDF8',
-      secondaryColor: '#A855F7',
       nodes: [
-        { step: '01', title: 'Context Compiler', subtitle: 'Dynamic Prompt Packing', color: '#38BDF8', iconType: 'brain' },
-        { step: '02', title: 'Model Routing', subtitle: 'Tiered Task Allocation', color: '#818CF8', iconType: 'network' },
-        { step: '03', title: 'Tool Execution', subtitle: 'Sandboxed Isolation', color: '#C084FC', iconType: 'tool' },
-        { step: '04', title: 'Verification Gate', subtitle: 'Zero Hallucination Guard', color: '#34D399', iconType: 'check' },
+        { step: '01', title: 'User Request', subtitle: 'Natural Language Input', color: '#38BDF8', iconType: 'user' },
+        { step: '02', title: 'Planner', subtitle: 'ReAct Reasoning Loop', color: '#818CF8', iconType: 'brain' },
+        { step: '03', title: 'Tool Execution', subtitle: 'Sandboxed Environment', color: '#C084FC', iconType: 'tool' },
+        { step: '04', title: 'Guardrails', subtitle: 'Active Safety Filter', color: '#EF4444', iconType: 'shield' },
+        { step: '05', title: 'Audit', subtitle: 'Immutable Trace Store', color: '#34D399', iconType: 'log' },
       ],
       takeaways: [
-        'Deterministic bounds beat prompt tweaking for production reliability',
-        'Tiered model routing saves compute on routine agent steps',
-        'Automated golden evaluation datasets catch silent model drift',
+        'Deterministic bounds on tool executions and step loops prevent infinite recursions',
+        'Human-in-the-loop triggers intercept destructive mutations before dispatch',
+        'Immutable cryptographic audit logs guarantee observability and forensic auditability',
       ],
     };
   }
 
-  // 3. TypeScript & JavaScript (Code & Developer Visual)
-  if (normTopic.includes('typescript') || normTopic.includes('javascript') || normTopic.includes('ts') || normTopic.includes('type')) {
+  // 4. React 19 & Next.js Archetype
+  // Requirement 2: Components -> Server/Client Rendering -> Data Fetching -> API -> UI
+  if (archetype === 'react_nextjs') {
+    return {
+      badge: 'REACT 19 & NEXT.JS APP ROUTER ARCHITECTURE',
+      title: cleanTitle,
+      archetype: 'react_nextjs',
+      visualStyle: options?.style || (lastStyle === 'premium_3d' ? 'code_developer' : 'premium_3d'),
+      visualTemplate: 'react_server_actions',
+      category: 'workflow',
+      bgGrad: ['#04091A', '#0B2147'],
+      accentColor: '#38BDF8',
+      secondaryColor: '#34D399',
+      nodes: [
+        { step: '01', title: 'Components', subtitle: 'RSC & Client Boundaries', color: '#38BDF8', iconType: 'code' },
+        { step: '02', title: 'Server Component', subtitle: 'Server Rendering', color: '#818CF8', iconType: 'brain' },
+        { step: '03', title: 'Data Fetching', subtitle: 'Deduplicated Fetch Cache', color: '#C084FC', iconType: 'db' },
+        { step: '04', title: 'API', subtitle: 'Type-Safe Server Actions', color: '#38BDF8', iconType: 'tool' },
+        { step: '05', title: 'UI', subtitle: 'Optimistic UI', color: '#34D399', iconType: 'check' },
+      ],
+      takeaways: [
+        'React Server Components eliminate client bundle overhead for static subtrees',
+        'Direct Server Actions eliminate REST endpoint boilerplate and type drift',
+        'useOptimistic delivers immediate local UI updates before network confirmation',
+      ],
+    };
+  }
+
+  // 5. Backend, APIs & Databases Archetype
+  // Requirement 2: Client -> API Gateway -> Authentication -> Business Logic -> Database -> Response
+  if (archetype === 'backend_apis') {
+    return {
+      badge: 'BACKEND API & TRANSACTION ARCHITECTURE',
+      title: cleanTitle,
+      archetype: 'backend_apis',
+      visualStyle: options?.style || (lastStyle === 'premium_3d' ? 'data_visualization' : 'premium_3d'),
+      visualTemplate: 'backend_six_stage_pipeline',
+      category: 'workflow',
+      bgGrad: ['#05091B', '#111C3D'],
+      accentColor: '#818CF8',
+      secondaryColor: '#38BDF8',
+      nodes: [
+        { step: '01', title: 'Client', subtitle: 'Idempotency Key Header', color: '#38BDF8', iconType: 'user' },
+        { step: '02', title: 'API Gateway', subtitle: 'Rate Limit & Routing', color: '#818CF8', iconType: 'network' },
+        { step: '03', title: 'Authentication', subtitle: 'Redis Cache Lock', color: '#F43F5E', iconType: 'shield' },
+        { step: '04', title: 'Business Logic', subtitle: 'Atomic Processing Unit', color: '#C084FC', iconType: 'tool' },
+        { step: '05', title: 'Database', subtitle: 'PostgreSQL ACID WAL', color: '#34D399', iconType: 'db' },
+        { step: '06', title: 'Response', subtitle: '24h Deduplication Cache', color: '#38BDF8', iconType: 'check' },
+      ],
+      metrics: [
+        { value: 'MUTEX', label: 'Distributed Lock', subtext: 'Redis Redlock Lease Mutex', color: '#38BDF8' },
+        { value: 'IDEMPOTENT', label: 'Request Deduplication', subtext: '24h Idempotency Cache TTL', color: '#818CF8' },
+        { value: 'ISOLATION', label: 'Serializable Isolation', subtext: 'PostgreSQL WAL Replicas', color: '#34D399' },
+      ],
+      takeaways: [
+        'Client-provided idempotency keys prevent duplicate billing on retries',
+        'Distributed lock prevents race conditions on parallel requests',
+        'Cached terminal response returned on duplicate network attempts',
+      ],
+    };
+  }
+
+  // 6. System Design & Microservices Archetype
+  if (archetype === 'system_design') {
+    return {
+      badge: 'SYSTEM DESIGN & DISTRIBUTED MICROSERVICES',
+      title: cleanTitle,
+      archetype: 'system_design',
+      visualStyle: options?.style || (lastStyle === 'isometric_tech' ? 'premium_3d' : 'isometric_tech'),
+      visualTemplate: 'isometric_distributed_stack',
+      category: 'isometric',
+      bgGrad: ['#050817', '#0D1A38'],
+      accentColor: '#38BDF8',
+      secondaryColor: '#818CF8',
+      nodes: [
+        { step: '01', title: 'Edge Ingress', subtitle: 'Anycast CDN & WAF', color: '#38BDF8', iconType: 'network' },
+        { step: '02', title: 'Microservice Mesh', subtitle: 'Stateless Service Fleet', color: '#818CF8', iconType: 'cloud' },
+        { step: '03', title: 'Event Broker', subtitle: 'Partitioned Kafka Stream', color: '#C084FC', iconType: 'tool' },
+        { step: '04', title: 'Distributed DB', subtitle: 'Multi-Region Sharding', color: '#34D399', iconType: 'db' },
+      ],
+      takeaways: [
+        'Asynchronous decoupled events prevent cascading network failures',
+        'Partitioned consumer groups guarantee in-order event processing',
+        'Read replicas offload analytical workloads from primary transactions',
+      ],
+    };
+  }
+
+  // 7. TypeScript & Code Archetype
+  if (archetype === 'typescript_code') {
     return {
       badge: 'TYPESCRIPT & TYPE SYSTEM ENGINEERING',
-      title: hookTitle || 'Advanced TypeScript Design Patterns & Type Safety',
-      visualStyle: 'code_developer',
+      title: cleanTitle,
+      archetype: 'typescript_code',
+      visualStyle: options?.style || 'code_developer',
       visualTemplate: 'typescript_editor',
       category: 'code',
       bgGrad: ['#050814', '#101633'],
@@ -308,155 +682,13 @@ export function determineVisualConfig(
     };
   }
 
-  // 4. React & Next.js Architecture
-  if (normTopic.includes('react') || normTopic.includes('next') || normTopic.includes('frontend')) {
-    const candidateStyle: VisualStyle = lastStyle === 'premium_3d' ? 'code_developer' : 'premium_3d';
-    return {
-      badge: 'REACT 19 & NEXT.JS APP ROUTER ARCHITECTURE',
-      title: hookTitle || 'Modern React 19 Server & Client Architecture',
-      visualStyle: candidateStyle,
-      visualTemplate: 'react_server_actions',
-      category: 'workflow',
-      bgGrad: ['#04091A', '#0B2147'],
-      accentColor: '#38BDF8',
-      secondaryColor: '#34D399',
-      nodes: [
-        { step: '01', title: 'Server Component', subtitle: 'Zero Client Bundle JS', color: '#38BDF8', iconType: 'brain' },
-        { step: '02', title: 'Server Action', subtitle: 'Type-Safe Direct RPC', color: '#818CF8', iconType: 'tool' },
-        { step: '03', title: 'Data Mutation', subtitle: 'ACID DB Operations', color: '#C084FC', iconType: 'db' },
-        { step: '04', title: 'Optimistic UI', subtitle: 'Instant Client Feedback', color: '#34D399', iconType: 'check' },
-      ],
-      takeaways: [
-        'React Compiler auto-memoizes render passes without manual useMemo',
-        'Direct server actions eliminate REST endpoint boilerplate',
-        'useOptimistic provides instant client responsiveness',
-      ],
-    };
-  }
-
-  // 5. Debugging & System Diagnostics
-  if (normTopic.includes('debug')) {
-    return {
-      badge: 'SYSTEM DIAGNOSTICS & ROOT CAUSE ANALYSIS',
-      title: hookTitle || 'Systematic 4-Step Production Debugging Protocol',
-      visualStyle: 'modern_editorial',
-      visualTemplate: 'diagnostics_flow',
-      category: 'debug',
-      bgGrad: ['#080C17', '#1A152E'],
-      accentColor: '#C084FC',
-      secondaryColor: '#38BDF8',
-      editorialQuote: {
-        quote: 'Hypothesis verification and regression tests prevent silent defect recurrence.',
-        authorOrAxiom: 'PRODUCTION ROOT CAUSE ANALYSIS',
-      },
-      nodes: [
-        { step: '01', title: 'Isolate & Reproduce', subtitle: 'Minimal Test Case', color: '#38BDF8', iconType: 'code' },
-        { step: '02', title: 'Span Diagnostics', subtitle: 'Correlation ID Tracing', color: '#818CF8', iconType: 'tool' },
-        { step: '03', title: 'Root Cause Proof', subtitle: 'Hypothesis Verification', color: '#C084FC', iconType: 'shield' },
-        { step: '04', title: 'Regression Guard', subtitle: 'Automated CI Test Gate', color: '#34D399', iconType: 'check' },
-      ],
-      takeaways: [
-        'Formulate hypotheses before touching production code',
-        'Change exactly one variable at a time during diagnostics',
-        'Every bug fix must ship with an automated regression test',
-      ],
-    };
-  }
-
-  // 6. System Design & Microservices (Isometric Technical Illustration)
-  if (
-    normTopic.includes('system') ||
-    normTopic.includes('microservice') ||
-    normTopic.includes('distributed') ||
-    normTopic.includes('scale') ||
-    normTopic.includes('architecture')
-  ) {
-    const candidateStyle: VisualStyle = lastStyle === 'isometric_tech' ? 'premium_3d' : 'isometric_tech';
-    return {
-      badge: 'SYSTEM DESIGN & DISTRIBUTED MICROSERVICES',
-      title: hookTitle || 'Resilient Microservices Architecture & Event Streaming',
-      visualStyle: candidateStyle,
-      visualTemplate: 'isometric_distributed_stack',
-      category: 'isometric',
-      bgGrad: ['#050817', '#0D1A38'],
-      accentColor: '#38BDF8',
-      secondaryColor: '#818CF8',
-      nodes: [
-        { step: '01', title: 'Edge Ingress', subtitle: 'Global Anycast CDN', color: '#38BDF8', iconType: 'network' },
-        { step: '02', title: 'Message Broker', subtitle: 'Kafka Partition Stream', color: '#818CF8', iconType: 'tool' },
-        { step: '03', title: 'Worker Fleet', subtitle: 'Autoscaling Pods', color: '#C084FC', iconType: 'cloud' },
-        { step: '04', title: 'Replica DB', subtitle: 'Multi-Region Sharding', color: '#34D399', iconType: 'db' },
-      ],
-      takeaways: [
-        'Asynchronous decoupled events prevent cascading network failures',
-        'Partitioned consumer groups guarantee in-order event processing',
-        'Read replicas offload analytical workloads from primary transactions',
-      ],
-    };
-  }
-
-  // 7. Backend, APIs & Databases
-  if (normTopic.includes('backend') || normTopic.includes('database') || normTopic.includes('api') || normTopic.includes('sql')) {
-    const candidateStyle: VisualStyle = lastStyle === 'premium_3d' ? 'data_visualization' : 'premium_3d';
-    return {
-      badge: 'DISTRIBUTED SYSTEMS & RESILIENT BACKEND',
-      title: hookTitle || 'Idempotent API Processing & Transaction Pipeline',
-      visualStyle: candidateStyle,
-      visualTemplate: 'idempotent_backend_flow',
-      category: 'workflow',
-      bgGrad: ['#05091B', '#111C3D'],
-      accentColor: '#818CF8',
-      secondaryColor: '#38BDF8',
-      nodes: [
-        { step: '01', title: 'API Gateway', subtitle: 'Idempotency Key Check', color: '#38BDF8', iconType: 'tool' },
-        { step: '02', title: 'Redis Cache Lock', subtitle: 'Atomic Distributed Lock', color: '#818CF8', iconType: 'shield' },
-        { step: '03', title: 'Core Processor', subtitle: 'ACID DB Transaction', color: '#C084FC', iconType: 'db' },
-        { step: '04', title: 'Response Cache', subtitle: '24h Deduplication TTL', color: '#34D399', iconType: 'check' },
-      ],
-      metrics: [
-        { value: 'MUTEX', label: 'Distributed Lock', subtext: 'Redis Redlock Lease Mutex', color: '#38BDF8' },
-        { value: 'IDEMPOTENT', label: 'Request Deduplication', subtext: '24h Idempotency Cache TTL', color: '#818CF8' },
-        { value: 'ISOLATION', label: 'Serializable Isolation', subtext: 'PostgreSQL WAL Replicas', color: '#34D399' },
-      ],
-      takeaways: [
-        'Client-provided idempotency keys prevent duplicate billing on retries',
-        'Distributed lock prevents race conditions on parallel requests',
-        'Cached terminal response returned on duplicate network attempts',
-      ],
-    };
-  }
-
-  // 8. DevOps, Docker & Kubernetes
-  if (normTopic.includes('devops') || normTopic.includes('docker') || normTopic.includes('kubernetes') || normTopic.includes('cloud') || normTopic.includes('ci')) {
-    return {
-      badge: 'AUTOMATION & CI/CD RELEASE PIPELINES',
-      title: hookTitle || 'Production-Grade Continuous Delivery Architecture',
-      visualStyle: 'isometric_tech',
-      visualTemplate: 'cloud_k8s_pipeline',
-      category: 'pipeline',
-      bgGrad: ['#040D17', '#09252A'],
-      accentColor: '#34D399',
-      secondaryColor: '#38BDF8',
-      nodes: [
-        { step: '01', title: 'Static Analysis', subtitle: 'TypeScript & ESLint Gates', color: '#38BDF8', iconType: 'code' },
-        { step: '02', title: 'Parallel Tests', subtitle: 'Unit & E2E Test Suite', color: '#818CF8', iconType: 'tool' },
-        { step: '03', title: 'Ephemeral Staging', subtitle: 'Isolated Preview Env', color: '#C084FC', iconType: 'cloud' },
-        { step: '04', title: 'Canary Rollout', subtitle: 'Health Check Verification', color: '#34D399', iconType: 'check' },
-      ],
-      takeaways: [
-        'Parallelize unit and integration tests to complete under 2 minutes',
-        'Automatic instant rollback triggered if canary error rates spike',
-        'Immutable container images promoted identically across staging to prod',
-      ],
-    };
-  }
-
-  // 9. Cybersecurity & Zero Trust
-  if (normTopic.includes('security') || normTopic.includes('cyber') || normTopic.includes('auth') || textContent.includes('zero-trust')) {
+  // 8. Cybersecurity Archetype
+  if (archetype === 'cybersecurity') {
     return {
       badge: 'CYBERSECURITY & ZERO-TRUST DEFENSE',
-      title: hookTitle || 'Zero-Trust Architecture & Threat Interception',
-      visualStyle: 'premium_3d',
+      title: cleanTitle,
+      archetype: 'cybersecurity',
+      visualStyle: options?.style || 'premium_3d',
       visualTemplate: 'security_shield_defense',
       category: 'workflow',
       bgGrad: ['#0C0617', '#200D2B'],
@@ -476,22 +708,30 @@ export function determineVisualConfig(
     };
   }
 
-  // 10. Engineering Leadership & Career
-  if (normTopic.includes('engineering') || normTopic.includes('career') || normTopic.includes('team') || normTopic.includes('lead')) {
+  // 9. Engineering Leadership Archetype
+  if (archetype === 'engineering_leadership') {
+    const isDebugging = normTopic.includes('debug') || normHook.includes('root cause') || normHook.includes('debug') || normHook.includes('diagnostic');
     return {
-      badge: 'ENGINEERING EXCELLENCE & ARCHITECTURAL AXIOMS',
-      title: hookTitle || 'Core Engineering Principles for Staff Engineers',
-      visualStyle: 'modern_editorial',
-      visualTemplate: 'staff_engineering_axioms',
-      category: 'editorial',
-      bgGrad: ['#070A12', '#141824'],
-      accentColor: '#F59E0B',
+      badge: isDebugging ? 'SYSTEM DIAGNOSTICS & ROOT CAUSE ANALYSIS' : 'ENGINEERING EXCELLENCE & ARCHITECTURAL AXIOMS',
+      title: cleanTitle,
+      archetype: 'engineering_leadership',
+      visualStyle: options?.style || 'modern_editorial',
+      visualTemplate: isDebugging ? 'diagnostics_flow' : 'staff_engineering_axioms',
+      category: isDebugging ? 'debug' : 'editorial',
+      bgGrad: isDebugging ? ['#080C17', '#1A152E'] : ['#070A12', '#141824'],
+      accentColor: isDebugging ? '#C084FC' : '#F59E0B',
       secondaryColor: '#38BDF8',
       editorialQuote: {
-        quote: 'Simplicity in system design creates operational resilience at scale.',
-        authorOrAxiom: 'PRINCIPLE OF RESILIENT SYSTEMS',
+        quote: isDebugging
+          ? 'Hypothesis verification and regression tests prevent silent defect recurrence.'
+          : 'Simplicity in system design creates operational resilience at scale.',
+        authorOrAxiom: isDebugging ? 'PRODUCTION ROOT CAUSE ANALYSIS' : 'PRINCIPLE OF RESILIENT SYSTEMS',
       },
-      takeaways: [
+      takeaways: isDebugging ? [
+        'Reproduce the bug deterministically before attempting any code fix',
+        'Formulate testable hypotheses and change one variable at a time',
+        'Verify the root cause with automated regression tests in CI/CD',
+      ] : [
         'Optimize for mean-time-to-recovery (MTTR) rather than mean-time-between-failures',
         'Clear interface boundaries matter infinitely more than internal implementation details',
         'Boring, battle-tested technology compounds reliability over time',
@@ -499,243 +739,94 @@ export function determineVisualConfig(
     };
   }
 
-  // Default Fallback: Premium 3D Architecture
+  // 10. Default General AI Archetype
   return {
-    badge: 'SOFTWARE ENGINEERING & SYSTEM ARCHITECTURE',
-    title: hookTitle || 'Modern Scalable System Architecture & Best Practices',
-    visualStyle: 'premium_3d',
-    visualTemplate: 'premium_system_cards',
+    badge: 'ARTIFICIAL INTELLIGENCE & LLM SYSTEMS',
+    title: cleanTitle,
+    archetype: 'ai_general',
+    visualStyle: options?.style || (lastStyle === 'futuristic_ai' ? 'premium_3d' : 'futuristic_ai'),
+    visualTemplate: 'neural_agent_cluster',
     category: 'workflow',
-    bgGrad: ['#040816', '#0E172F'],
+    bgGrad: ['#020617', '#09132E'],
     accentColor: '#38BDF8',
-    secondaryColor: '#818CF8',
+    secondaryColor: '#A855F7',
     nodes: [
-      { step: '01', title: 'Architecture Planning', subtitle: 'Interface & Contract First', color: '#38BDF8', iconType: 'brain' },
-      { step: '02', title: 'Resilient Design', subtitle: 'Fault Isolation & Retries', color: '#818CF8', iconType: 'shield' },
-      { step: '03', title: 'Scalable Implementation', subtitle: 'Stateless Compute Units', color: '#C084FC', iconType: 'code' },
-      { step: '04', title: 'Observability & Metrics', subtitle: 'Real-Time APM Traces', color: '#34D399', iconType: 'check' },
+      { step: '01', title: 'Context Compiler', subtitle: 'Dynamic Prompt Packing', color: '#38BDF8', iconType: 'brain' },
+      { step: '02', title: 'Model Routing', subtitle: 'Tiered Task Allocation', color: '#818CF8', iconType: 'network' },
+      { step: '03', title: 'Tool Execution', subtitle: 'Sandboxed Isolation', color: '#C084FC', iconType: 'tool' },
+      { step: '04', title: 'Verification Gate', subtitle: 'Zero Hallucination Guard', color: '#34D399', iconType: 'check' },
     ],
     takeaways: [
-      'Design software systems with explicit fault domains and circuit breakers',
-      'Prefer decoupled asynchronous pipelines over synchronous chains',
-      'Automated testing gates prevent regressions from reaching production',
+      'Deterministic bounds beat prompt tweaking for production reliability',
+      'Tiered model routing saves compute on routine agent steps',
+      'Automated golden evaluation datasets catch silent model drift',
     ],
   };
 }
 
-function createConfigForExplicitStyle(
-  style: VisualStyle,
-  topic: string,
-  hookTitle?: string,
-  _textContent?: string
-): VisualConfig {
-  switch (style) {
-    case 'modern_editorial':
-      return {
-        badge: 'ENGINEERING LEADERSHIP // ARCHITECTURAL AXIOMS',
-        title: hookTitle || `Engineering Perspective: ${topic}`,
-        visualStyle: 'modern_editorial',
-        visualTemplate: 'editorial_hero',
-        category: 'editorial',
-        bgGrad: ['#070A12', '#141824'],
-        accentColor: '#F59E0B',
-        secondaryColor: '#38BDF8',
-        editorialQuote: {
-          quote: 'Simplicity in system design creates operational resilience at scale.',
-          authorOrAxiom: 'ARCHITECTURAL PRINCIPLE',
-        },
-        takeaways: [
-          'Optimize for observability and mean-time-to-recovery',
-          'Clean interface abstractions prevent architectural erosion',
-          'Pragmatic technical choices beat speculative complexity',
-        ],
-      };
-    case 'isometric_tech':
-      return {
-        badge: '3D ISOMETRIC SYSTEM ARCHITECTURE',
-        title: hookTitle || `Distributed Infrastructure: ${topic}`,
-        visualStyle: 'isometric_tech',
-        visualTemplate: 'isometric_infrastructure',
-        category: 'isometric',
-        bgGrad: ['#040817', '#0D1A38'],
-        accentColor: '#38BDF8',
-        secondaryColor: '#818CF8',
-        nodes: [
-          { step: '01', title: 'Edge Ingress', subtitle: 'Global CDN Routing', color: '#38BDF8', iconType: 'network' },
-          { step: '02', title: 'Microservice Layer', subtitle: 'Stateless Service Fleet', color: '#818CF8', iconType: 'cloud' },
-          { step: '03', title: 'Data Pipeline', subtitle: 'Partitioned Bus', color: '#C084FC', iconType: 'tool' },
-          { step: '04', title: 'Persistence Store', subtitle: 'Multi-Region Replicas', color: '#34D399', iconType: 'db' },
-        ],
-        takeaways: [
-          'Stateless services enable elastic horizontal autoscaling',
-          'Decoupled queues buffer unexpected spiky traffic bursts',
-          'Read replicas insulate primary OLTP databases from analytics',
-        ],
-      };
-    case 'futuristic_ai':
-      return {
-        badge: 'NEURAL CLUSTER & INTELLIGENT AGENTS',
-        title: hookTitle || `AI Systems Engineering: ${topic}`,
-        visualStyle: 'futuristic_ai',
-        visualTemplate: 'neural_agent_cluster',
-        category: 'workflow',
-        bgGrad: ['#020617', '#0A122E'],
-        accentColor: '#38BDF8',
-        secondaryColor: '#A855F7',
-        nodes: [
-          { step: '01', title: 'Context Engine', subtitle: 'Dynamic Prompt Packing', color: '#38BDF8', iconType: 'brain' },
-          { step: '02', title: 'Model Routing', subtitle: 'Tiered Task Allocation', color: '#818CF8', iconType: 'network' },
-          { step: '03', title: 'Tool Dispatcher', subtitle: 'Isolated Sandbox', color: '#C084FC', iconType: 'tool' },
-          { step: '04', title: 'Audit Logger', subtitle: 'Telemetry & Evaluation', color: '#34D399', iconType: 'check' },
-        ],
-        takeaways: [
-          'Deterministic bounds beat prompt tweaking for reliability',
-          'Tiered routing saves compute on routine agent steps',
-          'Continuous evaluation catches prompt degradation early',
-        ],
-      };
-    case 'code_developer':
-      return {
-        badge: 'DEVELOPER WORKSPACE & ARCHITECTURE',
-        title: hookTitle || `Modern Engineering: ${topic}`,
-        visualStyle: 'code_developer',
-        visualTemplate: 'code_ide_workspace',
-        category: 'code',
-        bgGrad: ['#050814', '#101633'],
-        accentColor: '#818CF8',
-        secondaryColor: '#38BDF8',
-        codeLines: [
-          { code: 'interface Architecture<T> {', comment: '// Clean contract' },
-          { code: '  readonly id: string;', comment: '// Immutable identifier' },
-          { code: '  execute(payload: T): Promise<Result>;', comment: '// Async execution' },
-          { code: '}', comment: '' },
-          { code: 'export const handler = createRoute({', comment: '' },
-          { code: '  timeout: 5000, retry: 3', comment: '// Resilient bounds' },
-          { code: '});', comment: '' },
-        ],
-        takeaways: [
-          'Type-level contracts prevent runtime payload degradation',
-          'Strict timeout budgets prevent resource exhaustion',
-          'Explicit return types enforce defensive error handling',
-        ],
-      };
-    case 'data_visualization':
-      return {
-        badge: 'ENTERPRISE METRICS & DATA VISUALIZATION',
-        title: hookTitle || `Performance Benchmarks: ${topic}`,
-        visualStyle: 'data_visualization',
-        visualTemplate: 'metrics_dashboard',
-        category: 'data_vis',
-        bgGrad: ['#04091A', '#0C1B3A'],
-        accentColor: '#38BDF8',
-        secondaryColor: '#34D399',
-        metrics: [
-          { value: 'EDGE', label: 'Anycast Ingress', subtext: 'Global Anycast Edge Gateway', color: '#38BDF8' },
-          { value: 'MESH', label: 'Stateless Service Fleet', subtext: 'Decoupled Worker Routing', color: '#818CF8' },
-          { value: 'STORAGE', label: 'Replicated Persistence', subtext: 'Multi-Region WAL Consensus', color: '#34D399' },
-        ],
-        takeaways: [
-          'Distributed caching reduces database read load dramatically',
-          'Connection pooling prevents socket exhaustion under traffic spikes',
-          'Active health checks isolate degraded instances seamlessly',
-        ],
-      };
-    case 'premium_3d':
-    default:
-      return {
-        badge: 'PREMIUM 3D RENDER & ARCHITECTURE',
-        title: hookTitle || `System Architecture: ${topic}`,
-        visualStyle: 'premium_3d',
-        visualTemplate: 'premium_3d_cards',
-        category: 'workflow',
-        bgGrad: ['#040816', '#0E172F'],
-        accentColor: '#38BDF8',
-        secondaryColor: '#818CF8',
-        nodes: [
-          { step: '01', title: 'Input Ingress', subtitle: 'Edge Routing', color: '#38BDF8', iconType: 'brain' },
-          { step: '02', title: 'Transform Layer', subtitle: 'Business Logic', color: '#818CF8', iconType: 'tool' },
-          { step: '03', title: 'State Vault', subtitle: 'ACID Guarantee', color: '#C084FC', iconType: 'db' },
-          { step: '04', title: 'Output Delivery', subtitle: 'Verified Return', color: '#34D399', iconType: 'check' },
-        ],
-        takeaways: [
-          'Layered architecture isolates state mutations from presentation',
-          'Idempotent operations guarantee safe execution retries',
-          'Automated observability telemetry guarantees 24/7 visibility',
-        ],
-      };
-  }
-}
-
 /**
- * STYLE A: PREMIUM 3D RENDER
- * Realistic 3D glassmorphic cards, depth gradients, specular highlights,
- * and high-contrast vertical principles (strictly zero horizontal overlap).
+ * Universal Flow Card Renderer supporting 4, 5, or 6 connected pipeline stages.
+ * Automatically computes card widths and connector positions with zero horizontal collisions.
  */
-function renderPremium3DRender(config: VisualConfig): string {
-  const nodes = config.nodes || [
-    { step: '01', title: 'Ingress & Validation', subtitle: 'Edge Gateway Filter', color: '#38BDF8', iconType: 'brain' },
-    { step: '02', title: 'Core Processor', subtitle: 'ACID Transaction Unit', color: '#818CF8', iconType: 'tool' },
-    { step: '03', title: 'State & Caching', subtitle: 'Distributed Memory Grid', color: '#C084FC', iconType: 'db' },
-    { step: '04', title: 'Verified Egress', subtitle: 'Audited Response Delivery', color: '#34D399', iconType: 'check' },
-  ];
-
-  const nodeWidth = 245;
-  const nodeGap = 26;
+function renderUniversalPipeline(config: VisualConfig): string {
+  const nodes = config.nodes || [];
+  const nodeCount = Math.max(1, nodes.length);
+  const totalAvailableWidth = 1060;
   const startX = 70;
   const nodeY = 195;
   const nodeHeight = 150;
 
+  // Determine gap and width dynamically
+  const gap = nodeCount >= 6 ? 24 : nodeCount === 5 ? 28 : 26;
+  const cardWidth = Math.floor((totalAvailableWidth - (nodeCount - 1) * gap) / nodeCount);
+
   const cardsSvg = nodes.map((node, i) => {
-    const x = startX + i * (nodeWidth + nodeGap);
+    const x = startX + i * (cardWidth + gap);
     const arrowSvg = i < nodes.length - 1 ? `
-      <!-- 3D Connector Beam ${i + 1} -> ${i + 2} -->
-      <line x1="${x + nodeWidth + 2}" y1="${nodeY + nodeHeight / 2}" x2="${x + nodeWidth + nodeGap - 2}" y2="${nodeY + nodeHeight / 2}" stroke="${config.accentColor}" stroke-width="2" stroke-dasharray="3 3"/>
-      <polygon points="${x + nodeWidth + nodeGap - 4},${nodeY + nodeHeight / 2 - 4} ${x + nodeWidth + nodeGap + 3},${nodeY + nodeHeight / 2} ${x + nodeWidth + nodeGap - 4},${nodeY + nodeHeight / 2 + 4}" fill="${config.accentColor}"/>
-      <circle cx="${x + nodeWidth + nodeGap / 2}" cy="${nodeY + nodeHeight / 2}" r="3" fill="#FFFFFF"/>
+      <!-- Connector Arrow ${i + 1} -> ${i + 2} -->
+      <line x1="${x + cardWidth + 2}" y1="${nodeY + nodeHeight / 2}" x2="${x + cardWidth + gap - 4}" y2="${nodeY + nodeHeight / 2}" stroke="${config.accentColor}" stroke-width="2" stroke-dasharray="3 3"/>
+      <polygon points="${x + cardWidth + gap - 5},${nodeY + nodeHeight / 2 - 4} ${x + cardWidth + gap + 2},${nodeY + nodeHeight / 2} ${x + cardWidth + gap - 5},${nodeY + nodeHeight / 2 + 4}" fill="${config.accentColor}"/>
     ` : '';
 
+    const titleLines = wrapTextToWidth(node.title, cardWidth - 24, 15, 2);
+    const titleSvg = titleLines.map((tl, tIdx) => `
+      <text x="${x + 14}" y="${nodeY + 74 + tIdx * 20}" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC">${escapeXml(tl)}</text>
+    `).join('\n');
+
+    const subY = nodeY + 74 + (titleLines.length) * 20 + 6;
+    const subLines = wrapTextToWidth(node.subtitle || '', cardWidth - 24, 14, 2);
+    const subSvg = subLines.map((sl, sIdx) => `
+      <text x="${x + 14}" y="${subY + sIdx * 18}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(sl)}</text>
+    `).join('\n');
+
     return `
-      <!-- 3D Glass Card ${i + 1} -->
+      <!-- Glass Stage Card ${i + 1} -->
       <g>
-        <!-- Drop Shadow Layer -->
-        <rect x="${x + 4}" y="${nodeY + 6}" width="${nodeWidth}" height="${nodeHeight}" rx="14" fill="#000000" opacity="0.45"/>
+        <rect x="${x + 3}" y="${nodeY + 5}" width="${cardWidth}" height="${nodeHeight}" rx="12" fill="#000000" opacity="0.45"/>
+        <rect x="${x}" y="${nodeY}" width="${cardWidth}" height="${nodeHeight}" rx="12" fill="#0B1329" stroke="#1E2B4D" stroke-width="1.8"/>
+        <rect x="${x}" y="${nodeY}" width="${cardWidth}" height="4" rx="2" fill="${node.color}"/>
         
-        <!-- Base Glass Surface -->
-        <rect x="${x}" y="${nodeY}" width="${nodeWidth}" height="${nodeHeight}" rx="14" fill="#0B1329" stroke="#1E2B4D" stroke-width="1.8"/>
-        
-        <!-- Top Specular Highlight Edge -->
-        <path d="M ${x + 14} ${nodeY + 1} L ${x + nodeWidth - 14} ${nodeY + 1}" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="1.5" stroke-linecap="round"/>
-        
-        <!-- Top Accent Bar -->
-        <rect x="${x}" y="${nodeY}" width="${nodeWidth}" height="4" rx="2" fill="${node.color}"/>
-        
-        <!-- 3D Floating Step Pill -->
-        <rect x="${x + 16}" y="${nodeY + 16}" width="76" height="26" rx="13" fill="#030712" stroke="${node.color}" stroke-width="1.2"/>
-        <text x="${x + 54}" y="${nodeY + 34}" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${node.color}" text-anchor="middle" letter-spacing="1">STEP ${node.step}</text>
+        <!-- Step Pill -->
+        <rect x="${x + 12}" y="${nodeY + 14}" width="68" height="24" rx="12" fill="#030712" stroke="${node.color}" stroke-width="1.2"/>
+        <text x="${x + 46}" y="${nodeY + 30}" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${node.color}" text-anchor="middle" letter-spacing="0.5">STEP ${node.step}</text>
         
         <!-- Icon -->
-        ${renderSvgIcon(node.iconType || 'tool', x + nodeWidth - 38, nodeY + 16, node.color)}
+        ${renderSvgIcon(node.iconType || 'tool', x + cardWidth - 36, nodeY + 14, node.color)}
         
         <!-- Title & Subtitle -->
-        <text x="${x + 16}" y="${nodeY + 74}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">${escapeXml(node.title)}</text>
-        <text x="${x + 16}" y="${nodeY + 98}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(node.subtitle || '')}</text>
-        
-        <!-- Bottom Divider & Verification Pill -->
-        <line x1="${x + 16}" y1="${nodeY + 116}" x2="${x + nodeWidth - 16}" y2="${nodeY + 116}" stroke="#1E2B4D" stroke-width="1"/>
-        <circle cx="${x + 24}" cy="${nodeY + 132}" r="4" fill="${node.color}"/>
-        <text x="${x + 36}" y="${nodeY + 137}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#CBD5E1">Production Hardened</text>
+        ${titleSvg}
+        ${subSvg}
       </g>
       ${arrowSvg}
     `;
   }).join('\n');
 
   const takeaways = config.takeaways || [
-    'Layered architecture isolates state mutations from presentation',
-    'Idempotent operations guarantee safe execution retries',
-    'Automated observability telemetry guarantees 24/7 visibility',
+    'Automated verification gates prevent regressions from reaching production',
+    'Canary rollouts verify real traffic health before full deployment promotion',
+    'Immutable signed container images guarantee deployment parity across environments',
   ];
 
-  // Vertically stacked takeaway rows to eliminate horizontal text collisions completely
   const takeawaySvg = takeaways.slice(0, 3).map((t, idx) => `
     <g>
       <circle cx="102" cy="${435 + idx * 36}" r="4.5" fill="${config.accentColor}"/>
@@ -746,12 +837,12 @@ function renderPremium3DRender(config: VisualConfig): string {
   return `
     ${cardsSvg}
 
-    <!-- 3D Takeaway Banner Container -->
+    <!-- Architectural Takeaway Container -->
     <rect x="74" y="375" width="1056" height="165" rx="14" fill="#000000" opacity="0.4"/>
     <rect x="70" y="370" width="1060" height="170" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
     <path d="M 84 371 L 1116 371" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
     
-    <text x="95" y="402" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">3D ARCHITECTURAL TAKEAWAYS</text>
+    <text x="95" y="402" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">PRODUCTION ARCHITECTURAL PRINCIPLES</text>
     ${takeawaySvg}
   `;
 }
@@ -835,17 +926,11 @@ function renderIsometricTech(_config: VisualConfig): string {
 
     <!-- TIER 1: 3D ISOMETRIC EDGE INGRESS -->
     <g>
-      <!-- Base Shadow -->
       <polygon points="120,380 260,300 400,380 260,460" fill="#000000" opacity="0.45"/>
-      
-      <!-- Left Face -->
       <polygon points="120,330 260,410 260,460 120,380" fill="#0369A1" stroke="#38BDF8" stroke-width="1.2"/>
-      <!-- Right Face -->
       <polygon points="260,410 400,330 400,380 260,460" fill="#0284C7" stroke="#38BDF8" stroke-width="1.2"/>
-      <!-- Top Face -->
       <polygon points="260,250 400,330 260,410 120,330" fill="#0EA5E9" stroke="#7DD3FC" stroke-width="1.8"/>
       
-      <!-- Glowing Ingress Badge -->
       <circle cx="260" cy="330" r="16" fill="#030712" stroke="#38BDF8" stroke-width="2"/>
       ${renderSvgIcon('network', 248, 318, '#38BDF8')}
       <text x="260" y="215" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Edge Gateway</text>
@@ -860,17 +945,11 @@ function renderIsometricTech(_config: VisualConfig): string {
 
     <!-- TIER 2: 3D ISOMETRIC MICROSERVICE CLUSTER -->
     <g>
-      <!-- Base Shadow -->
       <polygon points="460,370 600,290 740,370 600,450" fill="#000000" opacity="0.45"/>
-      
-      <!-- Left Face -->
       <polygon points="460,320 600,400 600,450 460,370" fill="#4338CA" stroke="#818CF8" stroke-width="1.2"/>
-      <!-- Right Face -->
       <polygon points="600,400 740,320 740,370 600,450" fill="#4F46E5" stroke="#818CF8" stroke-width="1.2"/>
-      <!-- Top Face -->
       <polygon points="600,240 740,320 600,400 460,320" fill="#6366F1" stroke="#A5B4FC" stroke-width="1.8"/>
       
-      <!-- Glowing Cluster Badge -->
       <circle cx="600" cy="320" r="16" fill="#030712" stroke="#818CF8" stroke-width="2"/>
       ${renderSvgIcon('cloud', 588, 308, '#818CF8')}
       <text x="600" y="215" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Microservice Mesh</text>
@@ -885,17 +964,11 @@ function renderIsometricTech(_config: VisualConfig): string {
 
     <!-- TIER 3: 3D ISOMETRIC SHARDED DATABASE -->
     <g>
-      <!-- Base Cylinder Shadow -->
       <ellipse cx="980" cy="430" rx="100" ry="40" fill="#000000" opacity="0.45"/>
-      
-      <!-- Cylinder Bottom & Sides -->
       <path d="M 880 340 V 410 C 880 435 1080 435 1080 410 V 340 Z" fill="#064E3B" stroke="#34D399" stroke-width="1.5"/>
-      <!-- Cylinder Middle Ring -->
       <path d="M 880 365 C 880 390 1080 390 1080 365" fill="none" stroke="#34D399" stroke-width="1.5" stroke-dasharray="4 2"/>
-      <!-- Cylinder Top Lid -->
       <ellipse cx="980" cy="340" rx="100" ry="40" fill="#059669" stroke="#6EE7B7" stroke-width="2"/>
       
-      <!-- Glowing DB Badge -->
       <circle cx="980" cy="340" r="16" fill="#030712" stroke="#34D399" stroke-width="2"/>
       ${renderSvgIcon('db', 968, 328, '#34D399')}
       <text x="980" y="255" font-family="Inter, sans-serif" font-size="16" font-weight="800" fill="#F8FAFC" text-anchor="middle">Distributed Database</text>
@@ -928,32 +1001,22 @@ function renderFuturisticAI(_config: VisualConfig): string {
   return `
     <!-- Neural Network Synapse Lines -->
     <g>
-      <!-- Center Core to Node 1 -->
       <line x1="600" y1="305" x2="260" y2="240" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="5 3"/>
-      <!-- Center Core to Node 2 -->
       <line x1="600" y1="305" x2="940" y2="240" stroke="#818CF8" stroke-width="2.5" stroke-dasharray="5 3"/>
-      <!-- Center Core to Node 3 -->
       <line x1="600" y1="305" x2="260" y2="380" stroke="#EF4444" stroke-width="2.5" stroke-dasharray="5 3"/>
-      <!-- Center Core to Node 4 -->
       <line x1="600" y1="305" x2="940" y2="380" stroke="#34D399" stroke-width="2.5" stroke-dasharray="5 3"/>
-      
-      <!-- Inter-Agent Cross Connections -->
       <line x1="260" y1="240" x2="260" y2="380" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
       <line x1="940" y1="240" x2="940" y2="380" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="3 3"/>
     </g>
 
     <!-- CENTER NEURAL ORCHESTRATION CORE -->
     <g>
-      <!-- Outer HUD Ring 1 -->
       <circle cx="600" cy="305" r="95" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 8" opacity="0.4"/>
-      <!-- Outer HUD Ring 2 -->
       <circle cx="600" cy="305" r="75" fill="none" stroke="#818CF8" stroke-width="2" stroke-dasharray="30 15" opacity="0.6"/>
-      <!-- Inner Pulse Core -->
       <circle cx="600" cy="305" r="55" fill="#070C1E" stroke="#38BDF8" stroke-width="2.5"/>
       <circle cx="600" cy="305" r="30" fill="#0C1B3A" stroke="#818CF8" stroke-width="1.5"/>
       ${renderSvgIcon('brain', 588, 293, '#38BDF8')}
       
-      <!-- Center Core Labels -->
       <text x="600" y="415" font-family="Inter, sans-serif" font-size="16" font-weight="900" fill="#F8FAFC" text-anchor="middle" letter-spacing="1">AI ORCHESTRATOR</text>
       <text x="600" y="438" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#38BDF8" text-anchor="middle">ReAct Autonomous Loop</text>
     </g>
@@ -1002,10 +1065,10 @@ function renderFuturisticAI(_config: VisualConfig): string {
     <g>
       <rect x="70" y="475" width="1060" height="58" rx="12" fill="#040816" stroke="#1E2A4A" stroke-width="1.5"/>
       <circle cx="95" cy="504" r="5" fill="#38BDF8"/>
-      <text x="112" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Status: Autonomous Agent Active</text>
+      <text x="112" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">State: Autonomous Agent Loop Active</text>
       
       <circle cx="465" cy="504" r="5" fill="#34D399"/>
-      <text x="482" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Confidence: Formally Grounded</text>
+      <text x="482" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Evaluation: Deterministic Schema Bounds</text>
       
       <circle cx="830" cy="504" r="5" fill="#818CF8"/>
       <text x="847" y="509" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">Safety Gate: Human-in-the-Loop Active</text>
@@ -1076,8 +1139,6 @@ function renderCodeDeveloper(config: VisualConfig): string {
   return `
     <!-- Drop Shadow for IDE Window -->
     <rect x="${startX + 4}" y="${startY + 6}" width="${boxWidth}" height="${boxHeight}" rx="14" fill="#000000" opacity="0.5"/>
-    
-    <!-- Code Editor Card -->
     <rect x="${startX}" y="${startY}" width="${boxWidth}" height="${boxHeight}" rx="14" fill="#050814" stroke="#1E293B" stroke-width="2"/>
     
     <!-- Code Window Title Bar -->
@@ -1104,68 +1165,8 @@ function renderCodeDeveloper(config: VisualConfig): string {
 }
 
 /**
- * STYLE F: DATA VISUALIZATION
- * Clean metrics dashboard, big readable labels, architectural comparison charts,
- * and vertically stacked benchmark principles.
- */
-function renderDataVisualization(config: VisualConfig): string {
-  const metrics = config.metrics || [
-    { value: 'EDGE', label: 'Anycast Ingress', subtext: 'Global Anycast Edge Gateway', color: '#38BDF8' },
-    { value: 'MESH', label: 'Stateless Service Fleet', subtext: 'Decoupled Worker Routing', color: '#818CF8' },
-    { value: 'STORAGE', label: 'Replicated Persistence', subtext: 'Multi-Region WAL Consensus', color: '#34D399' },
-  ];
-
-  const cardWidth = 336;
-  const startX = 70;
-  const metricCardsSvg = metrics.map((m, i) => {
-    const x = startX + i * (cardWidth + 26);
-    return `
-      <!-- Metric Card ${i + 1} -->
-      <g>
-        <rect x="${x + 2}" y="197" width="${cardWidth}" height="150" rx="14" fill="#000000" opacity="0.45"/>
-        <rect x="${x}" y="195" width="${cardWidth}" height="150" rx="14" fill="#091226" stroke="#1D2A4A" stroke-width="1.8"/>
-        <rect x="${x}" y="195" width="${cardWidth}" height="4" rx="2" fill="${m.color}"/>
-        
-        <!-- Authentic Architecture Concept Tag -->
-        <text x="${x + 24}" y="254" font-family="Inter, sans-serif" font-size="32" font-weight="900" fill="#FFFFFF">${escapeXml(m.value)}</text>
-        
-        <!-- Label & Subtext -->
-        <text x="${x + 24}" y="290" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="${m.color}">${escapeXml(m.label)}</text>
-        <text x="${x + 24}" y="318" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">${escapeXml(m.subtext)}</text>
-      </g>
-    `;
-  }).join('\n');
-
-  const takeaways = config.takeaways || [
-    'Semantic caching prevents redundant expensive LLM calls',
-    'Hybrid search combines semantic dense vectors with lexical exact tokens',
-    'Strict JSON schema validation eliminates downstream deserialization crashes',
-  ];
-
-  const takeawaySvg = takeaways.slice(0, 3).map((t, idx) => `
-    <g>
-      <circle cx="102" cy="${435 + idx * 36}" r="4.5" fill="${config.accentColor}"/>
-      <text x="120" y="${440 + idx * 36}" font-family="Inter, sans-serif" font-size="15" font-weight="600" fill="#E2E8F0">${escapeXml(t)}</text>
-    </g>
-  `).join('\n');
-
-  return `
-    <!-- Top 3 Large Hero Metric Cards -->
-    ${metricCardsSvg}
-
-    <!-- Bottom Architectural Takeaway Container -->
-    <rect x="74" y="375" width="1056" height="165" rx="14" fill="#000000" opacity="0.4"/>
-    <rect x="70" y="370" width="1060" height="170" rx="14" fill="#080F24" stroke="#1E2B4D" stroke-width="1.8"/>
-    <path d="M 84 371 L 1116 371" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1" stroke-linecap="round"/>
-    
-    <text x="95" y="402" font-family="Inter, sans-serif" font-size="14" font-weight="800" fill="${config.accentColor}" letter-spacing="1.5">PRODUCTION BENCHMARK PRINCIPLES</text>
-    ${takeawaySvg}
-  `;
-}
-
-/**
  * AI AGENT SAFETY SPECIALIZED ARCHITECTURE DIAGRAM
- * Required for Test 10: 6 specific connected stages, intercept flows, and governance gates.
+ * Required for Test 10: 5-stage connected flow (User Request -> Planner -> Tool Execution -> Guardrails -> Audit).
  */
 function renderAISafetyDiagram(_config: VisualConfig): string {
   const userBox = { x: 70, y: 195, w: 225, h: 95 };
@@ -1178,7 +1179,7 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
   const ruleBox = { x: 940, y: 350, w: 190, h: 180 };
 
   return `
-    <!-- Top Pipeline Row -->
+    <!-- Top Pipeline Row: User Request -> Planner -> Tool Execution -> Audit -->
     <!-- Node 1: User Request -->
     <g>
       <rect x="${userBox.x}" y="${userBox.y}" width="${userBox.w}" height="${userBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
@@ -1189,18 +1190,18 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
       <text x="${userBox.x + 16}" y="${userBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Natural language task input</text>
     </g>
 
-    <!-- Arrow 1: User -> Agent -->
+    <!-- Arrow 1: User -> Planner / Agent Orchestrator -->
     <line x1="${userBox.x + userBox.w}" y1="${userBox.y + 45}" x2="${agentBox.x}" y2="${userBox.y + 45}" stroke="#475569" stroke-width="2" stroke-dasharray="4 2"/>
     <polygon points="${agentBox.x - 3},${userBox.y + 41} ${agentBox.x + 3},${userBox.y + 45} ${agentBox.x - 3},${userBox.y + 49}" fill="#64748B"/>
     <rect x="303" y="${userBox.y + 32}" width="48" height="24" rx="12" fill="#0B132B" stroke="#475569" stroke-width="1"/>
     <text x="327" y="${userBox.y + 49}" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#94A3B8" text-anchor="middle">Task</text>
 
-    <!-- Node 2: Agent Orchestrator -->
+    <!-- Node 2: Planner & Agent Orchestrator -->
     <g>
       <rect x="${agentBox.x}" y="${agentBox.y}" width="${agentBox.w}" height="${agentBox.h}" rx="10" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
       <rect x="${agentBox.x}" y="${agentBox.y}" width="${agentBox.w}" height="4" rx="2" fill="#38BDF8"/>
       ${renderSvgIcon('brain', agentBox.x + 16, agentBox.y + 16, '#38BDF8')}
-      <text x="${agentBox.x + 50}" y="${agentBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" letter-spacing="1">ORCHESTRATION</text>
+      <text x="${agentBox.x + 50}" y="${agentBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#38BDF8" letter-spacing="1">STEP 02: PLANNER</text>
       <text x="${agentBox.x + 50}" y="${agentBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Agent Orchestrator</text>
       <text x="${agentBox.x + 16}" y="${agentBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">ReAct reasoning &amp; plan</text>
     </g>
@@ -1216,7 +1217,7 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
       <rect x="${toolBox.x}" y="${toolBox.y}" width="${toolBox.w}" height="${toolBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
       <rect x="${toolBox.x}" y="${toolBox.y}" width="${toolBox.w}" height="4" rx="2" fill="#818CF8"/>
       ${renderSvgIcon('tool', toolBox.x + 16, toolBox.y + 16, '#818CF8')}
-      <text x="${toolBox.x + 50}" y="${toolBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#818CF8" letter-spacing="1">EXECUTION</text>
+      <text x="${toolBox.x + 50}" y="${toolBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#818CF8" letter-spacing="1">STEP 03</text>
       <text x="${toolBox.x + 50}" y="${toolBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Tool Execution</text>
       <text x="${toolBox.x + 16}" y="${toolBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">APIs, Databases &amp; Sandbox</text>
     </g>
@@ -1232,7 +1233,7 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
       <rect x="${auditBox.x}" y="${auditBox.y}" width="${auditBox.w}" height="${auditBox.h}" rx="10" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
       <rect x="${auditBox.x}" y="${auditBox.y}" width="${auditBox.w}" height="4" rx="2" fill="#34D399"/>
       ${renderSvgIcon('log', auditBox.x + 16, auditBox.y + 16, '#34D399')}
-      <text x="${auditBox.x + 48}" y="${auditBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" letter-spacing="1">AUDIT</text>
+      <text x="${auditBox.x + 48}" y="${auditBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" letter-spacing="1">STEP 05: AUDIT</text>
       <text x="${auditBox.x + 48}" y="${auditBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Audit Logs</text>
       <text x="${auditBox.x + 16}" y="${auditBox.y + 76}" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Telemetry store</text>
     </g>
@@ -1250,12 +1251,12 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
     <rect x="${toolBox.x - 30}" y="${agentBox.y + agentBox.h + 14}" width="140" height="24" rx="12" fill="#062B28" stroke="#10B981" stroke-width="1.2"/>
     <text x="${toolBox.x + 40}" y="${agentBox.y + agentBox.h + 31}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#34D399" text-anchor="middle">Authorize Call</text>
 
-    <!-- Node 5: Safety Guardrails -->
+    <!-- Node 5: Safety Guardrails (Step 04) -->
     <g>
       <rect x="${guardBox.x}" y="${guardBox.y}" width="${guardBox.w}" height="${guardBox.h}" rx="12" fill="#131B2E" stroke="#EF4444" stroke-width="2"/>
       <rect x="${guardBox.x}" y="${guardBox.y}" width="${guardBox.w}" height="4" rx="2" fill="#EF4444"/>
       ${renderSvgIcon('shield', guardBox.x + 16, guardBox.y + 18, '#EF4444')}
-      <text x="${guardBox.x + 50}" y="${guardBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#EF4444" letter-spacing="1">ACTIVE DEFENSE</text>
+      <text x="${guardBox.x + 50}" y="${guardBox.y + 28}" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#EF4444" letter-spacing="1">STEP 04: GUARDRAILS</text>
       <text x="${guardBox.x + 50}" y="${guardBox.y + 50}" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Safety Guardrails</text>
       
       <circle cx="${guardBox.x + 22}" cy="${guardBox.y + 76}" r="3.5" fill="#EF4444"/>
@@ -1305,29 +1306,35 @@ function renderAISafetyDiagram(_config: VisualConfig): string {
 }
 
 /**
- * Main Enriched SVG Generator function producing complete 1200x630 canvas
+ * Main Enriched SVG Generator producing complete 1200x630 canvas
  */
 export function generateEnrichedTopicVisualSvg(
   topic: string,
   hookTitle?: string,
   postBody?: string,
   options?: VisualEngineOptions
-): { svg: string; visualStyle: VisualStyle; visualTemplate: string } {
+): { svg: string; visualStyle: VisualStyle; visualTemplate: string; archetype: TechnicalArchetype } {
   const config = determineVisualConfig(topic, hookTitle, postBody, options);
   const titleLines = wrapTextToWidth(config.title, 1050, 44, 2);
   const titleStartY = titleLines.length === 1 ? 132 : 114;
   const titleLineHeight = 52;
 
   let diagramBodySvg = '';
+
+  // Select visual rendering archetype based on content
   switch (config.visualStyle) {
     case 'modern_editorial':
       diagramBodySvg = renderModernEditorial(config);
       break;
     case 'isometric_tech':
-      diagramBodySvg = renderIsometricTech(config);
+      if (config.archetype === 'devops_cicd') {
+        diagramBodySvg = renderUniversalPipeline(config);
+      } else {
+        diagramBodySvg = renderIsometricTech(config);
+      }
       break;
     case 'futuristic_ai':
-      if (config.category === 'ai_safety') {
+      if (config.category === 'ai_safety' || config.archetype === 'ai_agents') {
         diagramBodySvg = renderAISafetyDiagram(config);
       } else {
         diagramBodySvg = renderFuturisticAI(config);
@@ -1337,14 +1344,14 @@ export function generateEnrichedTopicVisualSvg(
       diagramBodySvg = renderCodeDeveloper(config);
       break;
     case 'data_visualization':
-      diagramBodySvg = renderDataVisualization(config);
-      break;
     case 'premium_3d':
     default:
-      if (config.category === 'ai_safety') {
+      if (config.category === 'ai_safety' || config.archetype === 'ai_agents') {
         diagramBodySvg = renderAISafetyDiagram(config);
+      } else if (config.nodes && config.nodes.length >= 4) {
+        diagramBodySvg = renderUniversalPipeline(config);
       } else {
-        diagramBodySvg = renderPremium3DRender(config);
+        diagramBodySvg = renderUniversalPipeline(config);
       }
       break;
   }
@@ -1393,7 +1400,7 @@ export function generateEnrichedTopicVisualSvg(
     <circle cx="90" cy="59" r="4.5" fill="${config.accentColor}"/>
     <text x="104" y="64" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="${config.accentColor}" letter-spacing="1.2">${escapeXml(config.badge)}</text>
 
-    <!-- Main Headline (Strictly 44px) -->
+    <!-- Main Headline (Strictly 44px, Zero Ellipses) -->
     ${titleSvg}
 
     <!-- Diagram Content Body (Pure SVG, Zero foreignObject, >= 14px Font Sizes) -->
@@ -1415,6 +1422,7 @@ export function generateEnrichedTopicVisualSvg(
     svg,
     visualStyle: config.visualStyle,
     visualTemplate: config.visualTemplate,
+    archetype: config.archetype,
   };
 }
 
