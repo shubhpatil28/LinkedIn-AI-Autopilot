@@ -86,22 +86,48 @@ async function runTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // Test 3: Image Provider Abstraction & Truthful Attribution
+  // Test 3: Free-Only Enforcement & Permanent Paid Provider Disablement
   // ---------------------------------------------------------------------------
-  console.log('\n--- Test 3: Image Provider Abstraction Status ---');
+  console.log('\n--- Test 3: Free-Only Enforcement & Permanent Paid Provider Disablement ---');
   {
+    const originalEnv = { ...process.env };
+
+    // Baseline: svg-engine is active and free
     const status = getImageProviderStatus();
     assert(status.fallbackAvailable === true, 'Fallback engine is always available');
-    assert(status.activeProvider === 'svg-engine', 'Correctly defaults to zero-cost svg-engine when no paid key');
-    assert(typeof status.costNote === 'string' && status.costNote.length > 0, 'Cost note is clearly documented');
+    assert(status.activeProvider === 'svg-engine', 'Exclusively enforces zero-cost svg-engine');
+    assert(status.costNote.includes('100% Free & Zero-Cost'), 'Cost note documents free in-house policy');
 
+    // Attempt 1: Malicious or accidental configuration with Google Imagen
+    process.env.IMAGE_PROVIDER = 'gemini-imagen';
+    process.env.IMAGE_API_KEY = 'paid_test_secret_key_123';
+    const imagenStatus = getImageProviderStatus();
+    assert(imagenStatus.activeProvider === 'svg-engine', 'Google Imagen is strictly blocked and activeProvider remains svg-engine');
+    assert(imagenStatus.isPaidBlocked === true, 'isPaidBlocked flags true for gemini-imagen');
+
+    // Attempt 2: Malicious or accidental configuration with OpenAI DALL-E
+    process.env.IMAGE_PROVIDER = 'openai-dalle';
+    const dalleStatus = getImageProviderStatus();
+    assert(dalleStatus.activeProvider === 'svg-engine', 'OpenAI DALL-E is strictly blocked and activeProvider remains svg-engine');
+    assert(dalleStatus.isPaidBlocked === true, 'isPaidBlocked flags true for openai-dalle');
+
+    // Attempt 3: Shorthand 'stability' or other paid services
+    process.env.IMAGE_PROVIDER = 'stability';
+    const stabilityStatus = getImageProviderStatus();
+    assert(stabilityStatus.activeProvider === 'svg-engine', 'Stability AI is strictly blocked and activeProvider remains svg-engine');
+    assert(stabilityStatus.isPaidBlocked === true, 'isPaidBlocked flags true for stability');
+
+    // Actual generation with paid env configured must NOT call network and must return svg-engine
     const generated = await generatePostImage({
       topic: 'AI & LLMs',
       hook: 'Autonomous AI workflows require deterministic bounds.',
     });
-    assert(generated.provider === 'svg-engine', 'Truthfully identifies provider as "svg-engine" (never lies about AI 3D render)');
+    assert(generated.provider === 'svg-engine', 'Truthfully identifies provider as "svg-engine" even when paid provider was configured in env');
     assert(generated.buffer && generated.buffer.length > 20000, 'PNG buffer is rich and non-empty');
     assert(generated.dimensions.width === 1200 && generated.dimensions.height === 630, 'Enforces 1200x630 dimensions');
+
+    // Restore env
+    process.env = originalEnv;
   }
 
   // ---------------------------------------------------------------------------
@@ -257,3 +283,4 @@ runTests().catch((err) => {
   console.error('Test execution failed:', err);
   process.exit(1);
 });
+
