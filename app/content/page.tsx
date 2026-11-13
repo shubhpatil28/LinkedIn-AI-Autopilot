@@ -125,7 +125,7 @@ export default function ContentPage() {
       // IST-aware scheduling: pick the next valid posting slot
       const scheduledAtISO = getNextScheduledSlot(
         new Date(),
-        settings?.postingTime || '09:00',
+        settings?.postingTime || '07:00',
         settings?.timezone || 'Asia/Kolkata'
       );
 
@@ -194,7 +194,7 @@ export default function ContentPage() {
     // Use existing scheduledAt if present, otherwise compute the next IST slot
     const defaultTime = item.scheduledAt || getNextScheduledSlot(
       new Date(),
-      settings?.postingTime || '09:00',
+      settings?.postingTime || '07:00',
       settings?.timezone || 'Asia/Kolkata'
     );
     await updateContentItem(item.id, {

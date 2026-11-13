@@ -407,7 +407,7 @@ export async function runFullAutoForUser(
 
   // Compute target publishing slot
   const now = new Date();
-  const postingTime = settings.postingTime || '09:00';
+  const postingTime = settings.postingTime || '07:00';
   const timezone = settings.timezone || 'Asia/Kolkata';
   const slotIso = getNextScheduledSlot(now, postingTime, timezone);
   const slotUtc = new Date(slotIso);

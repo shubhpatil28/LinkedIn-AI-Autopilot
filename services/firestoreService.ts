@@ -26,7 +26,7 @@ export const DEFAULT_TOPICS = [
 export const DEFAULT_SETTINGS: Omit<UserSettings, 'userId' | 'updatedAt'> = {
   topics: DEFAULT_TOPICS,
   postsPerDay: 1,
-  postingTime: '09:00',
+  postingTime: '07:00',
   timezone: 'Asia/Kolkata',
   language: 'English',
   writingStyle: 'Professional & Technical',

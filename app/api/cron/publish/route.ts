@@ -37,7 +37,8 @@ async function handleCronPublish(req: NextRequest) {
   }
 
   try {
-    const now = new Date();
+    const cronStartedAt = new Date().toISOString();
+    const now = new Date(cronStartedAt);
     const nowIST = getDatePartsInTimezone(now, "Asia/Kolkata");
     console.log(
       `[CRON][TIMING] START � UTC: ${now.toISOString()}, IST: ${nowIST.year}-${String(nowIST.month).padStart(2, "0")}-${String(nowIST.day).padStart(2, "0")} ${String(nowIST.hour).padStart(2, "0")}:${String(nowIST.minute).padStart(2, "0")}:${String(nowIST.second).padStart(2, "0")}`
@@ -184,12 +185,61 @@ async function handleCronPublish(req: NextRequest) {
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "DRY_RUN_SKIPPED" });
         continue;
       }
+      const publishAttemptStartedAt = new Date().toISOString();
+      console.log(
+        `[CRON][TIMING] Post ${post.id}: Attempt started - cronStartedAt=${cronStartedAt}, postScheduledAt=${post.scheduledAt}, publishAttemptStartedAt=${publishAttemptStartedAt}`
+      );
+
       const publishResult = await publishToLinkedIn(post, connection);
+      const linkedInApiResponseReceivedAt = new Date().toISOString();
+      console.log(
+        `[CRON][TIMING] Post ${post.id}: LinkedIn API response receivedAt=${linkedInApiResponseReceivedAt}`
+      );
+
       if (publishResult.success) {
-        await adminDb.collection("content").doc(post.id).update({ status: "PUBLISHED", linkedinPostId: publishResult.linkedinPostId || null, publishedAt: new Date().toISOString(), failureReason: null, updatedAt: new Date().toISOString() });
+        const publishedAt = new Date().toISOString();
+        const publishTiming = {
+          cronStartedAt,
+          postScheduledAt: post.scheduledAt || null,
+          publishAttemptStartedAt,
+          linkedInApiResponseReceivedAt,
+          publishedAt,
+        };
+        console.log(
+          `[CRON][TIMING] Post ${post.id}: PUBLISHED at ${publishedAt}. Delay since scheduledAt: ${
+            post.scheduledAt
+              ? `${Math.round((new Date(publishedAt).getTime() - new Date(post.scheduledAt).getTime()) / 60000)}m`
+              : "unknown"
+          }. API call latency: ${
+            new Date(linkedInApiResponseReceivedAt).getTime() - new Date(publishAttemptStartedAt).getTime()
+          }ms`
+        );
+        await adminDb.collection("content").doc(post.id).update({
+          status: "PUBLISHED",
+          linkedinPostId: publishResult.linkedinPostId || null,
+          publishedAt,
+          publishTiming,
+          failureReason: null,
+          updatedAt: publishedAt,
+        });
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "PUBLISHED", linkedinPostId: publishResult.linkedinPostId });
       } else {
-        await adminDb.collection("content").doc(post.id).update({ status: "FAILED", failureReason: publishResult.errorReason || "LinkedIn publishing failed.", updatedAt: new Date().toISOString() });
+        const failedAt = new Date().toISOString();
+        const publishTiming = {
+          cronStartedAt,
+          postScheduledAt: post.scheduledAt || null,
+          publishAttemptStartedAt,
+          linkedInApiResponseReceivedAt,
+        };
+        console.error(
+          `[CRON][TIMING] Post ${post.id}: FAILED at ${failedAt} - reason: ${publishResult.errorReason}`
+        );
+        await adminDb.collection("content").doc(post.id).update({
+          status: "FAILED",
+          failureReason: publishResult.errorReason || "LinkedIn publishing failed.",
+          publishTiming,
+          updatedAt: failedAt,
+        });
         results.push({ id: post.id, userId: post.userId, topic: post.topic, status: "FAILED", failureReason: publishResult.errorReason });
       }
     }

@@ -1,7 +1,7 @@
 /**
  * IST-aware scheduling utility for LinkedIn AI Autopilot.
  *
- * Computes the next posting slot (e.g. 09:00 Asia/Kolkata) and returns it
+ * Computes the next posting slot (e.g. 07:00 Asia/Kolkata) and returns it
  * as a UTC ISO-8601 string.  Uses Intl.DateTimeFormat for reliable timezone
  * conversion — no external dependencies, no reliance on browser locale.
  */
@@ -129,13 +129,13 @@ function validateTimezone(timezone: string): void {
  *  - Otherwise return tomorrow's slot.
  *
  * @param nowUtc      Current time as a JS Date (UTC).
- * @param postingTime Wall-clock time in "HH:MM" format (e.g. "09:00").
+ * @param postingTime Wall-clock time in "HH:MM" format (e.g. "07:00").
  * @param timezone    IANA timezone string (e.g. "Asia/Kolkata").
  * @returns           UTC ISO-8601 string of the next slot.
  */
 export function getNextScheduledSlot(
   nowUtc: Date,
-  postingTime: string = '09:00',
+  postingTime: string = '07:00',
   timezone: string = 'Asia/Kolkata'
 ): string {
   validateTimezone(timezone);

@@ -40,6 +40,14 @@ export interface ContentItem {
   /** Visual engine style & template metadata for diverse rotation */
   visualStyle?: VisualStyle | string;
   visualTemplate?: string;
+  /** Granular timing diagnostics to measure publishing latency and cron execution variance */
+  publishTiming?: {
+    cronStartedAt?: string;
+    postScheduledAt?: string | null;
+    publishAttemptStartedAt?: string;
+    linkedInApiResponseReceivedAt?: string;
+    publishedAt?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

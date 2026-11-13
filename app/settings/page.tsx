@@ -12,7 +12,7 @@ export default function SettingsPage() {
     userId: user?.uid || '',
     topics: ['AI', 'Coding', 'JavaScript', 'React', 'Web Development'],
     postsPerDay: 1,
-    postingTime: '09:00',
+    postingTime: '07:00',
     timezone: 'Asia/Kolkata',
     language: 'English',
     writingStyle: 'Professional & Technical',
